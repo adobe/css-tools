@@ -1,4 +1,6 @@
-# css [![Build Status](https://travis-ci.org/reworkcss/css.svg?branch=master)](https://travis-ci.org/reworkcss/css)
+# @adobe/css-tools
+
+> This is a fork of the npm css package due to low maintenance
 
 CSS parser / stringifier.
 
