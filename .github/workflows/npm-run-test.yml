@@ -28,4 +28,4 @@ jobs:
         cache: 'yarn'
     - run: yarn install
     - run: yarn run build
-    - run: yarn run test -- --headless
+    - run: yarn run test
