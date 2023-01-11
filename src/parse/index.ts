@@ -222,21 +222,16 @@ export const parse = (
          * div:matches(.toto, .titi:matches(.toto, .titi))
          *
          * Regex logic:
-         *  ("|')(?:\\\1|.)*?,(?:\\\1|.)*?\1 => Handle the " and '
-         *  \(.*?,.*?\)  => Handle the ()
-         *
-         * Optimization 0:
-         * No greedy capture (see docs about the difference between .* and .*?)
+         *  ("|')(?:\\\1|.)*?\1 => Handle the " and '
+         *  \(.*?\)  => Handle the ()
          *
          * Optimization 1:
-         *  \(.*?,.*?\) instead of \(.*?\) to limit the number of replace (don't need to replace if , is not in the string)
+         * No greedy capture (see docs about the difference between .* and .*?)
          *
          * Optimization 2:
-         * ("|')(?:\\\1|.)*?,(?:\\\1|.)*?\1 this use reference to capture group, it work faster.
+         * ("|')(?:\\\1|.)*?\1 this use reference to capture group, it work faster.
          */
-        .replace(/("|')(?:\\\1|.)*?,(?:\\\1|.)*?\1|\(.*?,.*?\)/g, m =>
-          m.replace(/,/g, '\u200C')
-        )
+        .replace(/("|')(?:\\\1|.)*?\1|\(.*?\)/g, m => m.replace(/,/g, '\u200C'))
         // Split the selector by ','
         .split(',')
         // Replace back \u200C by ','
