@@ -587,7 +587,14 @@ export const parse = (
   function _compileAtrule<T1 extends CssCommonPositionAST>(
     name: string
   ): () => T1 | void {
-    const re = new RegExp('^@' + name + '\\s*([^;]+);');
+    const re = new RegExp(
+      '^@' +
+        name +
+        '\\s*((:?[^;\'"]|"(?:\\\\"|[^"])*?"|\'(?:\\\\\'|[^\'])*?\')+);'
+    );
+
+    // ^@import\s*([^;"']|("|')(?:\\\2|.)*?\2)+;
+
     return function (): T1 | void {
       const pos = position();
       const m = match(re);
