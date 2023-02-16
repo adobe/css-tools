@@ -5,6 +5,7 @@ import {
   CssCharsetAST,
   CssCommentAST,
   CssCommonPositionAST,
+  CssContainerAST,
   CssCustomMediaAST,
   CssDeclarationAST,
   CssDocumentAST,
@@ -423,6 +424,35 @@ export const parse = (
   }
 
   /**
+   * Parse container.
+   */
+  function atcontainer(): CssContainerAST | void {
+    const pos = position();
+    const m = match(/^@container *([^{]+)/);
+
+    if (!m) {
+      return;
+    }
+    const container = trim(m[1]);
+
+    if (!open()) {
+      return error("@container missing '{'");
+    }
+
+    const style = comments<CssAtRuleAST>().concat(rules());
+
+    if (!close()) {
+      return error("@container missing '}'");
+    }
+
+    return pos<CssContainerAST>({
+      type: CssTypes.container,
+      container: container,
+      rules: style,
+    });
+  }
+
+  /**
    * Parse media.
    */
   function atmedia(): CssMediaAST | void {
@@ -626,7 +656,8 @@ export const parse = (
       atdocument() ||
       atpage() ||
       athost() ||
-      atfontface()
+      atfontface() ||
+      atcontainer()
     );
   }
 

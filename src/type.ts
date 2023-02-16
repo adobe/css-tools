@@ -6,6 +6,7 @@ export enum CssTypes {
   rule = 'rule',
   declaration = 'declaration',
   comment = 'comment',
+  container = 'container',
   charset = 'charset',
   document = 'document',
   customMedia = 'custom-media',
@@ -53,6 +54,11 @@ export type CssDeclarationAST = CssCommonPositionAST & {
 export type CssCommentAST = CssCommonPositionAST & {
   type: CssTypes.comment;
   comment: string;
+};
+export type CssContainerAST = CssCommonPositionAST & {
+  type: CssTypes.container;
+  container: string;
+  rules: Array<CssAtRuleAST>;
 };
 
 export type CssCharsetAST = CssCommonPositionAST & {
@@ -116,6 +122,7 @@ export type CssSupportsAST = CssCommonPositionAST & {
 export type CssAtRuleAST =
   | CssRuleAST
   | CssCommentAST
+  | CssContainerAST
   | CssCharsetAST
   | CssCustomMediaAST
   | CssDocumentAST

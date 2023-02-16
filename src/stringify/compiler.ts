@@ -3,6 +3,7 @@ import {
   CssCharsetAST,
   CssCommentAST,
   CssCommonPositionAST,
+  CssContainerAST,
   CssCustomMediaAST,
   CssDeclarationAST,
   CssDocumentAST,
@@ -64,6 +65,8 @@ class Compiler {
         return this.declaration(node);
       case CssTypes.comment:
         return this.comment(node);
+      case CssTypes.container:
+        return this.container(node);
       case CssTypes.charset:
         return this.charset(node);
       case CssTypes.document:
@@ -128,6 +131,26 @@ class Compiler {
       return this.emit('', node.position);
     }
     return this.emit(this.indent() + '/*' + node.comment + '*/', node.position);
+  }
+
+   /**
+   * Visit container node.
+   */
+   container(node: CssContainerAST) {
+    if (this.compress) {
+      return (
+        this.emit('@container ' + node.container, node.position) +
+        this.emit('{') +
+        this.mapVisit(node.rules) +
+        this.emit('}')
+      );
+    }
+    return (
+      this.emit('@container ' + node.container, node.position) +
+      this.emit(' {\n' + this.indent(1)) +
+      this.mapVisit(node.rules, '\n\n') +
+      this.emit(this.indent(-1) + '\n}')
+    );
   }
 
   /**
