@@ -139,7 +139,7 @@ class Compiler {
   /**
    * Visit container node.
    */
-   container(node: CssContainerAST) {
+  container(node: CssContainerAST) {
     if (this.compress) {
       return (
         this.emit('@container ' + node.container, node.position) +
@@ -149,10 +149,10 @@ class Compiler {
       );
     }
     return (
-      this.emit('@container ' + node.container, node.position) +
+      this.emit(this.indent() + '@container ' + node.container, node.position) +
       this.emit(' {\n' + this.indent(1)) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit(this.indent(-1) + '\n}')
+      this.emit('\n' + this.indent(-1) + this.indent() + '}')
     );
   }
 
@@ -163,20 +163,20 @@ class Compiler {
     if (this.compress) {
       return (
         this.emit('@layer ' + node.layer, node.position) +
-        node.rules ? (
-          this.emit('{') +
-          this.mapVisit(<CssRuleAST[]>node.rules) +
-          this.emit('}')
-        ) : ''
+        (node.rules
+          ? this.emit('{') +
+            this.mapVisit(<CssAllNodesAST[]>node.rules) +
+            this.emit('}')
+          : ';')
       );
     }
     return (
-      this.emit('@layer ' + node.layer, node.position) +
-      node.rules ? (
-        this.emit(' {\n' + this.indent(1)) +
-        this.mapVisit(<CssRuleAST[]>node.rules, '\n\n') +
-        this.emit(this.indent(-1) + '\n}')
-       ) : ''
+      this.emit(this.indent() + '@layer ' + node.layer, node.position) +
+      (node.rules
+        ? this.emit(' {\n' + this.indent(1)) +
+          this.mapVisit(<CssAllNodesAST[]>node.rules, '\n\n') +
+          this.emit('\n' + this.indent(-1) + this.indent() + '}')
+        : ';')
     );
   }
 
@@ -200,10 +200,10 @@ class Compiler {
       );
     }
     return (
-      this.emit('@media ' + node.media, node.position) +
+      this.emit(this.indent() + '@media ' + node.media, node.position) +
       this.emit(' {\n' + this.indent(1)) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit(this.indent(-1) + '\n}')
+      this.emit('\n' + this.indent(-1) + this.indent() + '}')
     );
   }
 
@@ -255,10 +255,10 @@ class Compiler {
       );
     }
     return (
-      this.emit('@supports ' + node.supports, node.position) +
+      this.emit(this.indent() + '@supports ' + node.supports, node.position) +
       this.emit(' {\n' + this.indent(1)) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit(this.indent(-1) + '\n}')
+      this.emit('\n' + this.indent(-1) + this.indent() + '}')
     );
   }
 

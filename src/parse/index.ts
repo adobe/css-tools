@@ -458,7 +458,7 @@ export const parse = (
    */
   function atlayer(): CssLayerAST | void {
     const pos = position();
-    const m = match(/^@layer *([^{]+)/);
+    const m = match(/^@layer *([^{;@]+)/);
 
     if (!m) {
       return;
@@ -466,6 +466,7 @@ export const parse = (
     const layer = trim(m[1]);
 
     if (!open()) {
+      match(/^[;\s]*/);
       return pos<CssLayerAST>({
         type: CssTypes.layer,
         layer: layer,
