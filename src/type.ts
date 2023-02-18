@@ -15,6 +15,7 @@ export enum CssTypes {
   import = 'import',
   keyframes = 'keyframes',
   keyframe = 'keyframe',
+  layer = 'layer',
   media = 'media',
   namespace = 'namespace',
   page = 'page',
@@ -99,6 +100,11 @@ export type CssKeyframeAST = CssCommonPositionAST & {
   values: Array<string>;
   declarations: Array<CssDeclarationAST | CssCommentAST>;
 };
+export type CssLayerAST = CssCommonPositionAST & {
+  type: CssTypes.layer;
+  layer: string;
+  rules?: Array<CssAtRuleAST>;
+};
 export type CssMediaAST = CssCommonPositionAST & {
   type: CssTypes.media;
   media: string;
@@ -130,6 +136,7 @@ export type CssAtRuleAST =
   | CssHostAST
   | CssImportAST
   | CssKeyframesAST
+  | CssLayerAST
   | CssMediaAST
   | CssNamespaceAST
   | CssPageAST

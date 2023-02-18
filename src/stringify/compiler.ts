@@ -12,6 +12,7 @@ import {
   CssImportAST,
   CssKeyframeAST,
   CssKeyframesAST,
+  CssLayerAST,
   CssMediaAST,
   CssNamespaceAST,
   CssPageAST,
@@ -83,6 +84,8 @@ class Compiler {
         return this.keyframes(node);
       case CssTypes.keyframe:
         return this.keyframe(node);
+      case CssTypes.layer:
+        return this.layer(node);
       case CssTypes.media:
         return this.media(node);
       case CssTypes.namespace:
@@ -133,7 +136,7 @@ class Compiler {
     return this.emit(this.indent() + '/*' + node.comment + '*/', node.position);
   }
 
-   /**
+  /**
    * Visit container node.
    */
    container(node: CssContainerAST) {
@@ -150,6 +153,30 @@ class Compiler {
       this.emit(' {\n' + this.indent(1)) +
       this.mapVisit(node.rules, '\n\n') +
       this.emit(this.indent(-1) + '\n}')
+    );
+  }
+
+  /**
+   * Visit container node.
+   */
+  layer(node: CssLayerAST) {
+    if (this.compress) {
+      return (
+        this.emit('@layer ' + node.layer, node.position) +
+        node.rules ? (
+          this.emit('{') +
+          this.mapVisit(<CssRuleAST[]>node.rules) +
+          this.emit('}')
+        ) : ''
+      );
+    }
+    return (
+      this.emit('@layer ' + node.layer, node.position) +
+      node.rules ? (
+        this.emit(' {\n' + this.indent(1)) +
+        this.mapVisit(<CssRuleAST[]>node.rules, '\n\n') +
+        this.emit(this.indent(-1) + '\n}')
+       ) : ''
     );
   }
 

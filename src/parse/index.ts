@@ -14,6 +14,7 @@ import {
   CssImportAST,
   CssKeyframeAST,
   CssKeyframesAST,
+  CssLayerAST,
   CssMediaAST,
   CssNamespaceAST,
   CssPageAST,
@@ -453,6 +454,38 @@ export const parse = (
   }
 
   /**
+   * Parse container.
+   */
+  function atlayer(): CssLayerAST | void {
+    const pos = position();
+    const m = match(/^@layer *([^{]+)/);
+
+    if (!m) {
+      return;
+    }
+    const layer = trim(m[1]);
+
+    if (!open()) {
+      return pos<CssLayerAST>({
+        type: CssTypes.layer,
+        layer: layer,
+      });
+    }
+
+    const style = comments<CssAtRuleAST>().concat(rules());
+
+    if (!close()) {
+      return error("@layer missing '}'");
+    }
+
+    return pos<CssLayerAST>({
+      type: CssTypes.layer,
+      layer: layer,
+      rules: style,
+    });
+  }
+
+  /**
    * Parse media.
    */
   function atmedia(): CssMediaAST | void {
@@ -657,7 +690,8 @@ export const parse = (
       atpage() ||
       athost() ||
       atfontface() ||
-      atcontainer()
+      atcontainer() ||
+      atlayer()
     );
   }
 
