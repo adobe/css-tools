@@ -5,8 +5,8 @@
 const typePath = require('../package.json').types;
 const {readFileSync, writeFileSync} = require('fs');
 let content = readFileSync(typePath, 'utf8');
-content = content.replaceAll(
-  'import("src/type").CssStylesheetAST',
+content = content.replace(
+  /import\("src\/type"\)\.CssStylesheetAST/g,
   'CssStylesheetAST'
 );
 writeFileSync(typePath, content, 'utf8');
