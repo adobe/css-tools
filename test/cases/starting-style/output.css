@@ -1,0 +1,21 @@
+@starting-style {
+  h2 {
+    font-size: 1.5em;
+  }
+}
+
+@media screen {
+  @starting-style {
+    h2 {
+      font-size: 1.5em;
+    }
+  }
+}
+
+@starting-style {
+  @media screen {
+    h2 {
+      font-size: 1.5em;
+    }
+  }
+}

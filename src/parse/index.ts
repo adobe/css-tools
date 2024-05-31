@@ -19,6 +19,7 @@ import {
   CssNamespaceAST,
   CssPageAST,
   CssRuleAST,
+  CssStartingStyleAST,
   CssStylesheetAST,
   CssSupportsAST,
   CssTypes,
@@ -681,6 +682,31 @@ export const parse = (
   }
 
   /**
+   * Parse starting style.
+   */
+  function atstartingstyle(): CssStartingStyleAST | void {
+    const pos = position();
+    const m = match(/^@starting-style\s*/);
+    if (!m) {
+      return;
+    }
+
+    if (!open()) {
+      return error("@starting-style missing '{'");
+    }
+    const style = comments<CssAtRuleAST>().concat(rules());
+
+    if (!close()) {
+      return error("@starting-style missing '}'");
+    }
+
+    return pos<CssStartingStyleAST>({
+      type: CssTypes.startingStyle,
+      rules: style,
+    });
+  }
+
+  /**
    * Parse import
    */
   const atimport = _compileAtrule<CssImportAST>('import');
@@ -742,6 +768,7 @@ export const parse = (
       athost() ||
       atfontface() ||
       atcontainer() ||
+      atstartingstyle() ||
       atlayer()
     );
   }

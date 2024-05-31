@@ -19,6 +19,7 @@ export enum CssTypes {
   media = 'media',
   namespace = 'namespace',
   page = 'page',
+  startingStyle = 'starting-style',
   supports = 'supports',
 }
 
@@ -125,6 +126,11 @@ export type CssSupportsAST = CssCommonPositionAST & {
   rules: Array<CssAtRuleAST>;
 };
 
+export type CssStartingStyleAST = CssCommonPositionAST & {
+  type: CssTypes.startingStyle;
+  rules: Array<CssAtRuleAST>;
+};
+
 export type CssAtRuleAST =
   | CssRuleAST
   | CssCommentAST
@@ -140,7 +146,8 @@ export type CssAtRuleAST =
   | CssMediaAST
   | CssNamespaceAST
   | CssPageAST
-  | CssSupportsAST;
+  | CssSupportsAST
+  | CssStartingStyleAST;
 
 export type CssAllNodesAST =
   | CssAtRuleAST

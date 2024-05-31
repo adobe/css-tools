@@ -17,6 +17,7 @@ import {
   CssNamespaceAST,
   CssPageAST,
   CssRuleAST,
+  CssStartingStyleAST,
   CssStylesheetAST,
   CssSupportsAST,
   CssTypes,
@@ -92,6 +93,8 @@ class Compiler {
         return this.namespace(node);
       case CssTypes.page:
         return this.page(node);
+      case CssTypes.startingStyle:
+        return this.startingStyle(node);
       case CssTypes.supports:
         return this.supports(node);
     }
@@ -240,6 +243,26 @@ class Compiler {
    */
   namespace(node: CssNamespaceAST) {
     return this.emit('@namespace ' + node.namespace + ';', node.position);
+  }
+
+  /**
+   * Visit container node.
+   */
+  startingStyle(node: CssStartingStyleAST) {
+    if (this.compress) {
+      return (
+        this.emit('@starting-style', node.position) +
+        this.emit('{') +
+        this.mapVisit(node.rules) +
+        this.emit('}')
+      );
+    }
+    return (
+      this.emit(this.indent() + '@starting-style', node.position) +
+      this.emit(' {\n' + this.indent(1)) +
+      this.mapVisit(node.rules, '\n\n') +
+      this.emit('\n' + this.indent(-1) + this.indent() + '}')
+    );
   }
 
   /**
