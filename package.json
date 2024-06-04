@@ -1,6 +1,6 @@
 {
   "name": "@adobe/css-tools",
-  "version": "4.3.3",
+  "version": "4.4.0",
   "description": "CSS parser / stringifier",
   "source": "src/index.ts",
   "main": "./dist/index.cjs",
@@ -17,8 +17,8 @@
     "Readme.md"
   ],
   "devDependencies": {
-    "@parcel/packager-ts": "2.11.0",
-    "@parcel/transformer-typescript-types": "2.11.0",
+    "@parcel/packager-ts": "2.12.0",
+    "@parcel/transformer-typescript-types": "2.12.0",
     "@types/benchmark": "^2.1.1",
     "@types/bytes": "^3.1.1",
     "@types/jest": "^29.5.3",
@@ -27,7 +27,7 @@
     "bytes": "^3.1.0",
     "gts": "^5.0.0",
     "jest": "^29.6.2",
-    "parcel": "^2.11.0",
+    "parcel": "^2.12.0",
     "ts-jest": "^29.1.1",
     "typescript": "^5.0.2"
   },

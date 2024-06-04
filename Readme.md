@@ -244,6 +244,13 @@ The `@layer` at-rule.
 - rules: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types. This may be null, if the rule did not contain any.
 
+### starting-style
+
+The `@starting-style` at-rule.
+
+- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+  at-rule types.
+
 ### Example
 
 CSS:
