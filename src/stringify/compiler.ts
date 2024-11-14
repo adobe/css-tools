@@ -293,7 +293,7 @@ class Compiler {
       return (
         this.emit(
           '@' + (node.vendor || '') + 'keyframes ' + node.name,
-          node.position
+          node.position,
         ) +
         this.emit('{') +
         this.mapVisit(node.keyframes) +
@@ -303,7 +303,7 @@ class Compiler {
     return (
       this.emit(
         '@' + (node.vendor || '') + 'keyframes ' + node.name,
-        node.position
+        node.position,
       ) +
       this.emit(' {\n' + this.indent(1)) +
       this.mapVisit(node.keyframes, '\n') +
@@ -408,7 +408,7 @@ class Compiler {
   customMedia(node: CssCustomMediaAST) {
     return this.emit(
       '@custom-media ' + node.name + ' ' + node.media + ';',
-      node.position
+      node.position,
     );
   }
 
@@ -438,7 +438,7 @@ class Compiler {
             return indent + s;
           })
           .join(',\n'),
-        node.position
+        node.position,
       ) +
       this.emit(' {\n') +
       this.emit(this.indent(1)) +

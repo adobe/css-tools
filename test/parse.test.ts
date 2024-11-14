@@ -61,7 +61,7 @@ describe('parse(str)', () => {
       {
         silent: true,
         source: 'foo.css',
-      }
+      },
     );
 
     const rules = result.stylesheet.rules;
@@ -85,7 +85,7 @@ describe('parse(str)', () => {
   it('should set parent property', () => {
     const result = parse(
       'thing { test: value; }\n' +
-        '@media (min-width: 100px) { thing { test: value; } }'
+        '@media (min-width: 100px) { thing { test: value; } }',
     );
 
     // expect(result).not.toHaveProperty('parent');

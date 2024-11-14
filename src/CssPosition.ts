@@ -9,7 +9,7 @@ export default class Position {
   constructor(
     start: {line: number; column: number},
     end: {line: number; column: number},
-    source: string
+    source: string,
   ) {
     this.start = start;
     this.end = end;

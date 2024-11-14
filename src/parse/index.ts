@@ -33,7 +33,7 @@ const commentre = /\/\*[^]*?(?:\*\/|$)/g;
 
 export const parse = (
   css: string,
-  options?: {source?: string; silent?: boolean}
+  options?: {source?: string; silent?: boolean},
 ): CssStylesheetAST => {
   options = options || {};
 
@@ -59,12 +59,12 @@ export const parse = (
   function position() {
     const start = {line: lineno, column: column};
     return function <T1 extends CssCommonPositionAST>(
-      node: Omit<T1, 'position'>
+      node: Omit<T1, 'position'>,
     ): T1 {
       (node as T1).position = new Position(
         start,
         {line: lineno, column: column},
-        options?.source || ''
+        options?.source || '',
       );
       whitespace();
       return node as T1;
@@ -82,7 +82,7 @@ export const parse = (
       msg,
       lineno,
       column,
-      css
+      css,
     );
 
     if (options?.silent) {
@@ -166,7 +166,7 @@ export const parse = (
    * Parse comments;
    */
   function comments<T1 extends CssCommonPositionAST>(
-    rules?: Array<T1 | CssCommentAST>
+    rules?: Array<T1 | CssCommentAST>,
   ) {
     let c;
     rules = rules || [];
@@ -201,7 +201,7 @@ export const parse = (
   function findClosingParenthese(
     str: string,
     start: number,
-    depth: number
+    depth: number,
   ): number {
     let ptr = start + 1;
     let found = false;
@@ -212,7 +212,7 @@ export const parse = (
         const nextSearch = findClosingParenthese(
           str,
           nextParentheses + 1,
-          depth + 1
+          depth + 1,
         );
         ptr = nextSearch + 1;
         closeParentheses = str.indexOf(')', ptr);
@@ -725,12 +725,12 @@ export const parse = (
    * Parse non-block at-rules
    */
   function _compileAtrule<T1 extends CssCommonPositionAST>(
-    name: string
+    name: string,
   ): () => T1 | void {
     const re = new RegExp(
       '^@' +
         name +
-        '\\s*((?::?[^;\'"]|"(?:\\\\"|[^"])*?"|\'(?:\\\\\'|[^\'])*?\')+)(?:;|$)'
+        '\\s*((?::?[^;\'"]|"(?:\\\\"|[^"])*?"|\'(?:\\\\\'|[^\'])*?\')+)(?:;|$)',
     );
 
     // ^@import\s*([^;"']|("|')(?:\\\2|.)*?\2)+(;|$)
