@@ -23,6 +23,38 @@
               },
               "source": "input.css"
             }
+          },
+          {
+            "type": "declaration",
+            "property": "background",
+            "value": "url('more stuff); here') 50% 50% no-repeat",
+            "position": {
+              "start": {
+                "line": 3,
+                "column": 3
+              },
+              "end": {
+                "line": 3,
+                "column": 57
+              },
+              "source": "input.css"
+            }
+          },
+          {
+            "type": "declaration",
+            "property": "background",
+            "value": "url(https://example.com/a;b) 50% 50% no-repeat",
+            "position": {
+              "start": {
+                "line": 4,
+                "column": 3
+              },
+              "end": {
+                "line": 4,
+                "column": 61
+              },
+              "source": "input.css"
+            }
           }
         ],
         "position": {
@@ -31,7 +63,7 @@
             "column": 1
           },
           "end": {
-            "line": 3,
+            "line": 5,
             "column": 2
           },
           "source": "input.css"
