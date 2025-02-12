@@ -313,7 +313,9 @@ export const parse = (
     }
 
     // val
-    const val = match(/^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\([^)]*?\)|[^};])+)/);
+    const val = match(
+      /^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|[^)])*?\)|[^};])+)/,
+    );
 
     const ret = pos<CssDeclarationAST>({
       type: CssTypes.declaration,
