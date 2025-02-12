@@ -1,3 +1,8 @@
+4.4.2 / 2025-02-12
+==================
+
+ * Fix regular expression for quoted values in parentheses
+
 4.4.0 / 2024-06-05
 ==================
 
