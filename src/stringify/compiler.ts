@@ -458,6 +458,17 @@ class Compiler {
         this.emit(';')
       );
     }
+    if (node.property === 'grid-template-areas')
+      return (
+        this.emit(this.indent()) +
+        this.emit(
+          node.property +
+            ': ' +
+            node.value.split('\n').join('\n'.padEnd(22) + this.indent()),
+          node.position,
+        ) +
+        this.emit(';')
+      );
     return (
       this.emit(this.indent()) +
       this.emit(node.property + ': ' + node.value, node.position) +
