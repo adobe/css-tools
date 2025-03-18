@@ -17,7 +17,7 @@
     "Readme.md"
   ],
   "devDependencies": {
-    "@parcel/packager-ts": "2.13.3",
+    "@parcel/packager-ts": "2.14.0",
     "@parcel/transformer-typescript-types": "2.13.3",
     "@types/benchmark": "^2.1.1",
     "@types/bytes": "^3.1.5",
