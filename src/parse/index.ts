@@ -113,15 +113,25 @@ export const parse = (
   /**
    * Opening brace.
    */
-  function open() {
-    return match(/^{\s*/);
+  function open(): boolean {
+    const openMatch = /^{\s*/.exec(css);
+    if (openMatch) {
+      processMatch(openMatch);
+      return true;
+    }
+    return false;
   }
 
   /**
    * Closing brace.
    */
   function close() {
-    return match(/^}/);
+    const closeMatch = /^}/.exec(css);
+    if (closeMatch) {
+      processMatch(closeMatch);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -142,13 +152,9 @@ export const parse = (
   }
 
   /**
-   * Match `re` and return captures.
+   * Update position and css string. Return the matches
    */
-  function match(re: RegExp) {
-    const m = re.exec(css);
-    if (!m) {
-      return;
-    }
+  function processMatch(m: RegExpExecArray) {
     const str = m[0];
     updatePosition(str);
     css = css.slice(str.length);
@@ -159,7 +165,10 @@ export const parse = (
    * Parse whitespace.
    */
   function whitespace() {
-    match(/^\s*/);
+    const m = /^\s*/.exec(css);
+    if (m) {
+      processMatch(m);
+    }
   }
 
   /**
@@ -187,10 +196,11 @@ export const parse = (
       return;
     }
 
-    const m = match(/^\/\*[^]*?\*\//);
+    const m = /^\/\*[^]*?\*\//.exec(css);
     if (!m) {
       return error('End of comment missing');
     }
+    processMatch(m);
 
     return pos<CssCommentAST>({
       type: CssTypes.comment,
@@ -231,10 +241,11 @@ export const parse = (
    * Parse selector.
    */
   function selector() {
-    const m = match(/^([^{]+)/);
+    const m = /^([^{]+)/.exec(css);
     if (!m) {
       return;
     }
+    processMatch(m);
 
     // remove comment in selector;
     let res = trim(m[0]).replace(commentre, '');
@@ -301,30 +312,41 @@ export const parse = (
     const pos = position();
 
     // prop
-    const propMatch = match(/^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/);
+    const propMatch = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/.exec(css);
     if (!propMatch) {
       return;
     }
+    processMatch(propMatch);
     const propValue = trim(propMatch[0]);
 
     // :
-    if (!match(/^:\s*/)) {
+    const sepratotorMatch = /^:\s*/.exec(css);
+    if (!sepratotorMatch) {
       return error("property missing ':'");
     }
+    processMatch(sepratotorMatch);
 
     // val
-    const val = match(
-      /^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|[^)])*?\)|[^};])+)/,
-    );
+    let value = '';
+    const matchVal =
+      /^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|[^)])*?\)|[^};])+)/.exec(
+        css,
+      );
+    if (matchVal) {
+      value = trim(processMatch(matchVal)[0]).replace(commentre, '');
+    }
 
     const ret = pos<CssDeclarationAST>({
       type: CssTypes.declaration,
       property: propValue.replace(commentre, ''),
-      value: val ? trim(val[0]).replace(commentre, '') : '',
+      value: value,
     });
 
     // ;
-    match(/^[;\s]*/);
+    const endMatch = /^[;\s]*/.exec(css);
+    if (endMatch) {
+      processMatch(endMatch);
+    }
 
     return ret;
   }
@@ -363,9 +385,13 @@ export const parse = (
     const vals = [];
     const pos = position();
 
-    while ((m = match(/^((\d+\.\d+|\.\d+|\d+)%?|[a-z]+)\s*/))) {
-      vals.push(m[1]);
-      match(/^,\s*/);
+    while ((m = /^((\d+\.\d+|\.\d+|\d+)%?|[a-z]+)\s*/.exec(css))) {
+      const res = processMatch(m);
+      vals.push(res[1]);
+      const spacesMatch = /^,\s*/.exec(css);
+      if (spacesMatch) {
+        processMatch(spacesMatch);
+      }
     }
 
     if (!vals.length) {
@@ -384,19 +410,19 @@ export const parse = (
    */
   function atkeyframes(): CssKeyframesAST | void {
     const pos = position();
-    const m1 = match(/^@([-\w]+)?keyframes\s*/);
+    const m1 = /^@([-\w]+)?keyframes\s*/.exec(css);
 
     if (!m1) {
       return;
     }
-    const vendor = m1[1];
+    const vendor = processMatch(m1)[1];
 
     // identifier
-    const m2 = match(/^([-\w]+)\s*/);
+    const m2 = /^([-\w]+)\s*/.exec(css);
     if (!m2) {
       return error('@keyframes missing name');
     }
-    const name = m2[1];
+    const name = processMatch(m2)[1];
 
     if (!open()) {
       return error("@keyframes missing '{'");
@@ -426,12 +452,12 @@ export const parse = (
    */
   function atsupports(): CssSupportsAST | void {
     const pos = position();
-    const m = match(/^@supports *([^{]+)/);
+    const m = /^@supports *([^{]+)/.exec(css);
 
     if (!m) {
       return;
     }
-    const supports = trim(m[1]);
+    const supports = trim(processMatch(m)[1]);
 
     if (!open()) {
       return error("@supports missing '{'");
@@ -455,11 +481,12 @@ export const parse = (
    */
   function athost() {
     const pos = position();
-    const m = match(/^@host\s*/);
+    const m = /^@host\s*/.exec(css);
 
     if (!m) {
       return;
     }
+    processMatch(m);
 
     if (!open()) {
       return error("@host missing '{'");
@@ -482,12 +509,12 @@ export const parse = (
    */
   function atcontainer(): CssContainerAST | void {
     const pos = position();
-    const m = match(/^@container *([^{]+)/);
+    const m = /^@container *([^{]+)/.exec(css);
 
     if (!m) {
       return;
     }
-    const container = trim(m[1]);
+    const container = trim(processMatch(m)[1]);
 
     if (!open()) {
       return error("@container missing '{'");
@@ -511,15 +538,18 @@ export const parse = (
    */
   function atlayer(): CssLayerAST | void {
     const pos = position();
-    const m = match(/^@layer *([^{;@]+)/);
+    const m = /^@layer *([^{;@]+)/.exec(css);
 
     if (!m) {
       return;
     }
-    const layer = trim(m[1]);
+    const layer = trim(processMatch(m)[1]);
 
     if (!open()) {
-      match(/^[;\s]*/);
+      const m2 = /^[;\s]*/.exec(css);
+      if (m2) {
+        processMatch(m2);
+      }
       return pos<CssLayerAST>({
         type: CssTypes.layer,
         layer: layer,
@@ -544,12 +574,12 @@ export const parse = (
    */
   function atmedia(): CssMediaAST | void {
     const pos = position();
-    const m = match(/^@media *([^{]+)/);
+    const m = /^@media *([^{]+)/.exec(css);
 
     if (!m) {
       return;
     }
-    const media = trim(m[1]);
+    const media = trim(processMatch(m)[1]);
 
     if (!open()) {
       return error("@media missing '{'");
@@ -573,15 +603,16 @@ export const parse = (
    */
   function atcustommedia(): CssCustomMediaAST | void {
     const pos = position();
-    const m = match(/^@custom-media\s+(--\S+)\s*([^{;\s][^{;]*);/);
+    const m = /^@custom-media\s+(--\S+)\s*([^{;\s][^{;]*);/.exec(css);
     if (!m) {
       return;
     }
+    const res = processMatch(m);
 
     return pos<CssCustomMediaAST>({
       type: CssTypes.customMedia,
-      name: trim(m[1]),
-      media: trim(m[2]),
+      name: trim(res[1]),
+      media: trim(res[2]),
     });
   }
 
@@ -590,10 +621,11 @@ export const parse = (
    */
   function atpage(): CssPageAST | void {
     const pos = position();
-    const m = match(/^@page */);
+    const m = /^@page */.exec(css);
     if (!m) {
       return;
     }
+    processMatch(m);
 
     const sel = selector() || [];
 
@@ -625,13 +657,14 @@ export const parse = (
    */
   function atdocument(): CssDocumentAST | void {
     const pos = position();
-    const m = match(/^@([-\w]+)?document *([^{]+)/);
+    const m = /^@([-\w]+)?document *([^{]+)/.exec(css);
     if (!m) {
       return;
     }
+    const res = processMatch(m);
 
-    const vendor = trim(m[1]);
-    const doc = trim(m[2]);
+    const vendor = trim(res[1]);
+    const doc = trim(res[2]);
 
     if (!open()) {
       return error("@document missing '{'");
@@ -656,10 +689,11 @@ export const parse = (
    */
   function atfontface(): CssFontFaceAST | void {
     const pos = position();
-    const m = match(/^@font-face\s*/);
+    const m = /^@font-face\s*/.exec(css);
     if (!m) {
       return;
     }
+    processMatch(m);
 
     if (!open()) {
       return error("@font-face missing '{'");
@@ -688,10 +722,11 @@ export const parse = (
    */
   function atstartingstyle(): CssStartingStyleAST | void {
     const pos = position();
-    const m = match(/^@starting-style\s*/);
+    const m = /^@starting-style\s*/.exec(css);
     if (!m) {
       return;
     }
+    processMatch(m);
 
     if (!open()) {
       return error("@starting-style missing '{'");
@@ -739,12 +774,13 @@ export const parse = (
 
     return function (): T1 | void {
       const pos = position();
-      const m = match(re);
+      const m = re.exec(css);
       if (!m) {
         return;
       }
+      const res = processMatch(m);
       const ret: Record<string, string> = {type: name};
-      ret[name] = m[1].trim();
+      ret[name] = res[1].trim();
       return pos<T1>(ret as unknown as T1) as T1;
     };
   }
