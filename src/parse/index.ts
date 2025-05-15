@@ -532,7 +532,7 @@ export const parse = (
    */
   function atcustommedia(): CssCustomMediaAST | void {
     const pos = position();
-    const m = /^@custom-media\s+(--\S+)\s*([^{;\s][^{;]*);/.exec(css);
+    const m = /^@custom-media\s+(--\S+)\s+([^{;\s][^{;]*);/.exec(css);
     if (!m) {
       return;
     }
