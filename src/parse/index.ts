@@ -24,6 +24,10 @@ import {
   CssSupportsAST,
   CssTypes,
 } from '../type';
+import {
+  indexOfArrayWithBracketAndQuoteSupport,
+  splitWithBracketAndQuoteSupport,
+} from '../utils/stringSearch';
 
 // http://www.w3.org/TR/CSS21/grammar.html
 // https://github.com/visionmedia/css-parse/pull/49#issuecomment-30088027
@@ -48,7 +52,9 @@ export const parse = (
    */
   function updatePosition(str: string) {
     const lines = str.match(/\n/g);
-    if (lines) lineno += lines.length;
+    if (lines) {
+      lineno += lines.length;
+    }
     const i = str.lastIndexOf('\n');
     column = ~i ? str.length - i : column + str.length;
   }
@@ -208,35 +214,6 @@ export const parse = (
     });
   }
 
-  function findClosingParenthese(
-    str: string,
-    start: number,
-    depth: number,
-  ): number {
-    let ptr = start + 1;
-    let found = false;
-    let closeParentheses = str.indexOf(')', ptr);
-    while (!found && closeParentheses !== -1) {
-      const nextParentheses = str.indexOf('(', ptr);
-      if (nextParentheses !== -1 && nextParentheses < closeParentheses) {
-        const nextSearch = findClosingParenthese(
-          str,
-          nextParentheses + 1,
-          depth + 1,
-        );
-        ptr = nextSearch + 1;
-        closeParentheses = str.indexOf(')', ptr);
-      } else {
-        found = true;
-      }
-    }
-    if (found && closeParentheses !== -1) {
-      return closeParentheses;
-    } else {
-      return -1;
-    }
-  }
-
   /**
    * Parse selector.
    */
@@ -248,61 +225,9 @@ export const parse = (
     processMatch(m);
 
     // remove comment in selector;
-    let res = trim(m[0]).replace(commentre, '');
+    const res = trim(m[0]).replace(commentre, '');
 
-    // Optimisation: If there is no ',' no need to split or post-process (this is less costly)
-    if (res.indexOf(',') === -1) {
-      return [res];
-    }
-
-    // Replace all the , in the parentheses by \u200C
-    let ptr = 0;
-    let startParentheses = res.indexOf('(', ptr);
-    while (startParentheses !== -1) {
-      const closeParentheses = findClosingParenthese(res, startParentheses, 0);
-      if (closeParentheses === -1) {
-        break;
-      }
-      ptr = closeParentheses + 1;
-      res =
-        res.substring(0, startParentheses) +
-        res
-          .substring(startParentheses, closeParentheses)
-          .replace(/,/g, '\u200C') +
-        res.substring(closeParentheses);
-      startParentheses = res.indexOf('(', ptr);
-    }
-
-    // Replace all the , in ' and " by \u200C
-    res = res
-      /**
-       * replace ',' by \u200C for data selector (div[data-lang="fr,de,us"])
-       *
-       * Examples:
-       * div[data-lang="fr,\"de,us"]
-       * div[data-lang='fr,\'de,us']
-       *
-       * Regex logic:
-       *  ("|')(?:\\\1|.)*?\1 => Handle the " and '
-       *
-       * Optimization 1:
-       * No greedy capture (see docs about the difference between .* and .*?)
-       *
-       * Optimization 2:
-       * ("|')(?:\\\1|.)*?\1 this use reference to capture group, it work faster.
-       */
-      .replace(/("|')(?:\\\1|.)*?\1/g, m => m.replace(/,/g, '\u200C'));
-
-    // Split all the left , and replace all the \u200C by ,
-    return (
-      res
-        // Split the selector by ','
-        .split(',')
-        // Replace back \u200C by ','
-        .map(s => {
-          return trim(s.replace(/\u200C/g, ','));
-        })
-    );
+    return splitWithBracketAndQuoteSupport(res, [',']).map(v => trim(v));
   }
 
   /**
@@ -328,12 +253,16 @@ export const parse = (
 
     // val
     let value = '';
-    const matchVal =
-      /^((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|\((?:'(?:\\'|.)*?'|"(?:\\"|.)*?"|[^)])*?\)|[^};])+)/.exec(
-        css,
-      );
-    if (matchVal) {
-      value = trim(processMatch(matchVal)[0]).replace(commentre, '');
+    const endValuePosition = indexOfArrayWithBracketAndQuoteSupport(css, [
+      ';',
+      '}',
+    ]);
+    if (endValuePosition !== -1) {
+      value = css.substring(0, endValuePosition);
+      const fakeMatch = [value] as unknown as RegExpExecArray;
+      processMatch(fakeMatch);
+
+      value = trim(value).replace(commentre, '');
     }
 
     const ret = pos<CssDeclarationAST>({
