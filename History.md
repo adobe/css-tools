@@ -1,3 +1,14 @@
+4.4.3 / 2025-05-15
+==================
+
+ * Refactoring of the code to allow security static analysis from GitHub
+ * Fix Polynomial regular expression used on uncontrolled data
+ * Improve performance (very low improvement)
+ * Switch some regex to string search (indexOf based)
+ * Add new utils function with their corresponding unit-tests
+ * Add nicer format of template areas #283 by @jogibear9988
+ * Fix typescript error on ConstructorParameters (parcel) #444
+
 4.4.2 / 2025-02-12
 ==================
 
