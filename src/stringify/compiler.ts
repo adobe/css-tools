@@ -23,12 +23,17 @@ import {
   CssTypes,
 } from '../type';
 
+export type CompilerOptions = {
+  indent?: string;
+  compress?: boolean;
+};
+
 class Compiler {
   level = 0;
   indentation = '  ';
   compress = false;
 
-  constructor(options?: {indent?: string; compress?: boolean}) {
+  constructor(options?: CompilerOptions) {
     if (typeof options?.indent === 'string') {
       this.indentation = options?.indent;
     }
