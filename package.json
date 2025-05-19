@@ -18,7 +18,7 @@
   ],
   "devDependencies": {
     "@parcel/packager-ts": "2.15.0",
-    "@parcel/transformer-typescript-types": "2.15.0",
+    "@parcel/transformer-typescript-types": "2.15.1",
     "@types/benchmark": "^2.1.1",
     "@types/bytes": "^3.1.5",
     "@types/jest": "^29.5.3",
