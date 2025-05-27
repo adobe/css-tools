@@ -9,3 +9,21 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "daily"
+    groups:
+      parcel-packages:
+        patterns:
+          - "parcel"
+          - "@parcel/*"
+      jest-packages:
+        patterns:
+          - "jest"
+          - "ts-jest"
+          - "@types/jest"
+      benchmark-packages:
+        patterns:
+          - "benchmark"
+          - "@types/benchmark"
+      bytes-packages:
+        patterns:
+          - "bytes"
+          - "@types/bytes"
