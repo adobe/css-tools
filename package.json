@@ -51,6 +51,7 @@
     "fix": "biome check --write",
     "check-package-bundle": "attw --pack .",
     "lint": "biome check",
+    "prebuild": "npm run clean",
     "prepack": "rollup -c",
     "posttest": "npm run lint",
     "postbuild": "tar -czf dist/archive.tgz LICENSE README.md dist/cjs dist/esm dist/umd docs package.json && npx attw --format ascii dist/archive.tgz && rm dist/archive.tgz"
