@@ -1,3 +1,13 @@
+4.4.4 / 2025-01-27
+==================
+
+ * Switch to npm
+ * Switch to biome and reformat the code
+ * Made some code change to comply with biome recommendation
+ * Switch to rollup
+ * Fix exports thanks to https://www.npmjs.com/package/@arethetypeswrong/cli
+ * Add a check to ensure the bundle will be properly exported in the future
+
 4.4.3 / 2025-05-15
 ==================
 
