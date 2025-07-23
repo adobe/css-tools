@@ -49,7 +49,7 @@
     "clean": "rm -rf ./dist",
     "build": "rollup -c",
     "fix": "biome check --write",
-    "check-package-bundle": "attw --format ascii --pack .",
+    "check-package-bundle": "attw --pack .",
     "lint": "biome check",
     "prepack": "rollup -c",
     "posttest": "npm run lint",
