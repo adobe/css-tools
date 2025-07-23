@@ -1,13 +1,25 @@
 {
-  "extends": "./node_modules/gts/tsconfig-google.json",
   "compilerOptions": {
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "composite": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ES2023"],
+    "module": "esnext",
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "pretty": true,
+    "sourceMap": true,
+    "stripInternal": true,
+    "strict": true,
+    "target": "ES2022",
     "rootDir": ".",
-    "outDir": "dist/cjs",
-    "resolveJsonModule": true
+    "outDir": "dist",
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "esModuleInterop": true
   },
-  "include": [
-    "src/**/*.ts",
-    "test/**/*.ts",
-    "generate-tests.ts"
-  ]
+  "include": ["src/**/*.ts", "test/**/*.ts", "generate-tests.ts"],
+  "exclude": ["node_modules"]
 }

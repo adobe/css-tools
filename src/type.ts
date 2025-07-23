@@ -1,5 +1,5 @@
-import CssParseError from './CssParseError';
-import Position from './CssPosition';
+import type CssParseError from './CssParseError';
+import type Position from './CssPosition';
 
 export enum CssTypes {
   stylesheet = 'stylesheet',

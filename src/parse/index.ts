@@ -1,27 +1,27 @@
 import CssParseError from '../CssParseError';
 import Position from '../CssPosition';
 import {
-  CssAtRuleAST,
-  CssCharsetAST,
-  CssCommentAST,
-  CssCommonPositionAST,
-  CssContainerAST,
-  CssCustomMediaAST,
-  CssDeclarationAST,
-  CssDocumentAST,
-  CssFontFaceAST,
-  CssHostAST,
-  CssImportAST,
-  CssKeyframeAST,
-  CssKeyframesAST,
-  CssLayerAST,
-  CssMediaAST,
-  CssNamespaceAST,
-  CssPageAST,
-  CssRuleAST,
-  CssStartingStyleAST,
-  CssStylesheetAST,
-  CssSupportsAST,
+  type CssAtRuleAST,
+  type CssCharsetAST,
+  type CssCommentAST,
+  type CssCommonPositionAST,
+  type CssContainerAST,
+  type CssCustomMediaAST,
+  type CssDeclarationAST,
+  type CssDocumentAST,
+  type CssFontFaceAST,
+  type CssHostAST,
+  type CssImportAST,
+  type CssKeyframeAST,
+  type CssKeyframesAST,
+  type CssLayerAST,
+  type CssMediaAST,
+  type CssNamespaceAST,
+  type CssPageAST,
+  type CssRuleAST,
+  type CssStartingStyleAST,
+  type CssStylesheetAST,
+  type CssSupportsAST,
   CssTypes,
 } from '../type';
 import {
@@ -33,11 +33,11 @@ import {
 // https://github.com/visionmedia/css-parse/pull/49#issuecomment-30088027
 // New rule => https://www.w3.org/TR/CSS22/syndata.html#comments
 // [^] is equivalent to [.\n\r]
-const commentre = /\/\*[^]*?(?:\*\/|$)/g;
+const commentRegex = /\/\*[^]*?(?:\*\/|$)/g;
 
 export const parse = (
   css: string,
-  options?: {source?: string; silent?: boolean},
+  options?: { source?: string; silent?: boolean },
 ): CssStylesheetAST => {
   options = options || {};
 
@@ -63,13 +63,13 @@ export const parse = (
    * Mark position and patch `node.position`.
    */
   function position() {
-    const start = {line: lineno, column: column};
-    return function <T1 extends CssCommonPositionAST>(
+    const start = { line: lineno, column: column };
+    return <T1 extends CssCommonPositionAST>(
       node: Omit<T1, 'position'>,
-    ): T1 {
+    ): T1 => {
       (node as T1).position = new Position(
         start,
-        {line: lineno, column: column},
+        { line: lineno, column: column },
         options?.source || '',
       );
       whitespace();
@@ -82,7 +82,7 @@ export const parse = (
    */
   const errorsList: Array<CssParseError> = [];
 
-  function error(msg: string) {
+  function error(msg: string): undefined {
     const err = new CssParseError(
       options?.source || '',
       msg,
@@ -144,14 +144,17 @@ export const parse = (
    * Parse ruleset.
    */
   function rules() {
-    let node: CssRuleAST | CssAtRuleAST | void;
+    let node: CssRuleAST | CssAtRuleAST | undefined;
     const rules: Array<CssRuleAST | CssAtRuleAST> = [];
     whitespace();
     comments(rules);
-    while (css.length && css.charAt(0) !== '}' && (node = atrule() || rule())) {
+    while (css.length && css.charAt(0) !== '}') {
+      node = atRule() || rule();
       if (node) {
         rules.push(node);
         comments(rules);
+      } else {
+        break;
       }
     }
     return rules;
@@ -183,12 +186,11 @@ export const parse = (
   function comments<T1 extends CssCommonPositionAST>(
     rules?: Array<T1 | CssCommentAST>,
   ) {
-    let c;
     rules = rules || [];
-    while ((c = comment())) {
-      if (c) {
-        rules.push(c);
-      }
+    let c: CssCommentAST | undefined = comment();
+    while (c) {
+      rules.push(c);
+      c = comment();
     }
     return rules;
   }
@@ -196,7 +198,7 @@ export const parse = (
   /**
    * Parse comment.
    */
-  function comment(): CssCommentAST | void {
+  function comment(): CssCommentAST | undefined {
     const pos = position();
     if ('/' !== css.charAt(0) || '*' !== css.charAt(1)) {
       return;
@@ -225,15 +227,15 @@ export const parse = (
     processMatch(m);
 
     // remove comment in selector;
-    const res = trim(m[0]).replace(commentre, '');
+    const res = trim(m[0]).replace(commentRegex, '');
 
-    return splitWithBracketAndQuoteSupport(res, [',']).map(v => trim(v));
+    return splitWithBracketAndQuoteSupport(res, [',']).map((v) => trim(v));
   }
 
   /**
    * Parse declaration.
    */
-  function declaration(): CssDeclarationAST | void {
+  function declaration(): CssDeclarationAST | undefined {
     const pos = position();
 
     // prop
@@ -245,11 +247,11 @@ export const parse = (
     const propValue = trim(propMatch[0]);
 
     // :
-    const sepratotorMatch = /^:\s*/.exec(css);
-    if (!sepratotorMatch) {
+    const separatorMatch = /^:\s*/.exec(css);
+    if (!separatorMatch) {
       return error("property missing ':'");
     }
-    processMatch(sepratotorMatch);
+    processMatch(separatorMatch);
 
     // val
     let value = '';
@@ -262,12 +264,12 @@ export const parse = (
       const fakeMatch = [value] as unknown as RegExpExecArray;
       processMatch(fakeMatch);
 
-      value = trim(value).replace(commentre, '');
+      value = trim(value).replace(commentRegex, '');
     }
 
     const ret = pos<CssDeclarationAST>({
       type: CssTypes.declaration,
-      property: propValue.replace(commentre, ''),
+      property: propValue.replace(commentRegex, ''),
       value: value,
     });
 
@@ -292,12 +294,11 @@ export const parse = (
     comments(decls);
 
     // declarations
-    let decl;
-    while ((decl = declaration())) {
-      if (decl) {
-        decls.push(decl);
-        comments(decls);
-      }
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
+      decls.push(decl);
+      comments(decls);
+      decl = declaration();
     }
 
     if (!close()) {
@@ -310,17 +311,20 @@ export const parse = (
    * Parse keyframe.
    */
   function keyframe() {
-    let m;
     const vals = [];
     const pos = position();
 
-    while ((m = /^((\d+\.\d+|\.\d+|\d+)%?|[a-z]+)\s*/.exec(css))) {
+    let m: RegExpExecArray | null = /^((\d+\.\d+|\.\d+|\d+)%?|[a-z]+)\s*/.exec(
+      css,
+    );
+    while (m) {
       const res = processMatch(m);
       vals.push(res[1]);
       const spacesMatch = /^,\s*/.exec(css);
       if (spacesMatch) {
         processMatch(spacesMatch);
       }
+      m = /^((\d+\.\d+|\.\d+|\d+)%?|[a-z]+)\s*/.exec(css);
     }
 
     if (!vals.length) {
@@ -337,7 +341,7 @@ export const parse = (
   /**
    * Parse keyframes.
    */
-  function atkeyframes(): CssKeyframesAST | void {
+  function atKeyframes(): CssKeyframesAST | undefined {
     const pos = position();
     const m1 = /^@([-\w]+)?keyframes\s*/.exec(css);
 
@@ -357,11 +361,12 @@ export const parse = (
       return error("@keyframes missing '{'");
     }
 
-    let frame;
     let frames: Array<CssKeyframeAST | CssCommentAST> = comments();
-    while ((frame = keyframe())) {
+    let frame: CssKeyframeAST | undefined = keyframe();
+    while (frame) {
       frames.push(frame);
       frames = frames.concat(comments());
+      frame = keyframe();
     }
 
     if (!close()) {
@@ -379,7 +384,7 @@ export const parse = (
   /**
    * Parse supports.
    */
-  function atsupports(): CssSupportsAST | void {
+  function atSupports(): CssSupportsAST | undefined {
     const pos = position();
     const m = /^@supports *([^{]+)/.exec(css);
 
@@ -408,7 +413,7 @@ export const parse = (
   /**
    * Parse host.
    */
-  function athost() {
+  function atHost() {
     const pos = position();
     const m = /^@host\s*/.exec(css);
 
@@ -436,7 +441,7 @@ export const parse = (
   /**
    * Parse container.
    */
-  function atcontainer(): CssContainerAST | void {
+  function atContainer(): CssContainerAST | undefined {
     const pos = position();
     const m = /^@container *([^{]+)/.exec(css);
 
@@ -465,7 +470,7 @@ export const parse = (
   /**
    * Parse container.
    */
-  function atlayer(): CssLayerAST | void {
+  function atLayer(): CssLayerAST | undefined {
     const pos = position();
     const m = /^@layer *([^{;@]+)/.exec(css);
 
@@ -501,7 +506,7 @@ export const parse = (
   /**
    * Parse media.
    */
-  function atmedia(): CssMediaAST | void {
+  function atMedia(): CssMediaAST | undefined {
     const pos = position();
     const m = /^@media *([^{]+)/.exec(css);
 
@@ -530,7 +535,7 @@ export const parse = (
   /**
    * Parse custom-media.
    */
-  function atcustommedia(): CssCustomMediaAST | void {
+  function atCustomMedia(): CssCustomMediaAST | undefined {
     const pos = position();
     const m = /^@custom-media\s+(--\S+)\s+([^{;\s][^{;]*);/.exec(css);
     if (!m) {
@@ -548,7 +553,7 @@ export const parse = (
   /**
    * Parse paged media.
    */
-  function atpage(): CssPageAST | void {
+  function atPage(): CssPageAST | undefined {
     const pos = position();
     const m = /^@page */.exec(css);
     if (!m) {
@@ -564,10 +569,11 @@ export const parse = (
     let decls = comments<CssDeclarationAST>();
 
     // declarations
-    let decl;
-    while ((decl = declaration())) {
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
       decls.push(decl);
       decls = decls.concat(comments());
+      decl = declaration();
     }
 
     if (!close()) {
@@ -584,7 +590,7 @@ export const parse = (
   /**
    * Parse document.
    */
-  function atdocument(): CssDocumentAST | void {
+  function atDocument(): CssDocumentAST | undefined {
     const pos = position();
     const m = /^@([-\w]+)?document *([^{]+)/.exec(css);
     if (!m) {
@@ -616,7 +622,7 @@ export const parse = (
   /**
    * Parse font-face.
    */
-  function atfontface(): CssFontFaceAST | void {
+  function atFontFace(): CssFontFaceAST | undefined {
     const pos = position();
     const m = /^@font-face\s*/.exec(css);
     if (!m) {
@@ -630,10 +636,11 @@ export const parse = (
     let decls = comments<CssDeclarationAST>();
 
     // declarations
-    let decl;
-    while ((decl = declaration())) {
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
       decls.push(decl);
       decls = decls.concat(comments());
+      decl = declaration();
     }
 
     if (!close()) {
@@ -649,7 +656,7 @@ export const parse = (
   /**
    * Parse starting style.
    */
-  function atstartingstyle(): CssStartingStyleAST | void {
+  function atStartingStyle(): CssStartingStyleAST | undefined {
     const pos = position();
     const m = /^@starting-style\s*/.exec(css);
     if (!m) {
@@ -675,24 +682,24 @@ export const parse = (
   /**
    * Parse import
    */
-  const atimport = _compileAtrule<CssImportAST>('import');
+  const atImport = _compileAtRule<CssImportAST>('import');
 
   /**
    * Parse charset
    */
-  const atcharset = _compileAtrule<CssCharsetAST>('charset');
+  const atCharset = _compileAtRule<CssCharsetAST>('charset');
 
   /**
    * Parse namespace
    */
-  const atnamespace = _compileAtrule<CssNamespaceAST>('namespace');
+  const atNamespace = _compileAtRule<CssNamespaceAST>('namespace');
 
   /**
    * Parse non-block at-rules
    */
-  function _compileAtrule<T1 extends CssCommonPositionAST>(
+  function _compileAtRule<T1 extends CssCommonPositionAST>(
     name: string,
-  ): () => T1 | void {
+  ): () => T1 | undefined {
     const re = new RegExp(
       '^@' +
         name +
@@ -701,14 +708,14 @@ export const parse = (
 
     // ^@import\s*([^;"']|("|')(?:\\\2|.)*?\2)+(;|$)
 
-    return function (): T1 | void {
+    return (): T1 | undefined => {
       const pos = position();
       const m = re.exec(css);
       if (!m) {
         return;
       }
       const res = processMatch(m);
-      const ret: Record<string, string> = {type: name};
+      const ret: Record<string, string> = { type: name };
       ret[name] = res[1].trim();
       return pos<T1>(ret as unknown as T1) as T1;
     };
@@ -717,26 +724,26 @@ export const parse = (
   /**
    * Parse at rule.
    */
-  function atrule(): CssAtRuleAST | void {
+  function atRule(): CssAtRuleAST | undefined {
     if (css[0] !== '@') {
       return;
     }
 
     return (
-      atkeyframes() ||
-      atmedia() ||
-      atcustommedia() ||
-      atsupports() ||
-      atimport() ||
-      atcharset() ||
-      atnamespace() ||
-      atdocument() ||
-      atpage() ||
-      athost() ||
-      atfontface() ||
-      atcontainer() ||
-      atstartingstyle() ||
-      atlayer()
+      atKeyframes() ||
+      atMedia() ||
+      atCustomMedia() ||
+      atSupports() ||
+      atImport() ||
+      atCharset() ||
+      atNamespace() ||
+      atDocument() ||
+      atPage() ||
+      atHost() ||
+      atFontFace() ||
+      atContainer() ||
+      atStartingStyle() ||
+      atLayer()
     );
   }
 
@@ -772,14 +779,17 @@ function trim(str: string) {
 /**
  * Adds non-enumerable parent node reference to each node.
  */
-function addParent<T1 extends {type?: string}>(obj: T1, parent?: unknown): T1 {
+function addParent<T1 extends { type?: string }>(
+  obj: T1,
+  parent?: unknown,
+): T1 {
   const isNode = obj && typeof obj.type === 'string';
   const childParent = isNode ? obj : parent;
 
   for (const k in obj) {
     const value = obj[k];
     if (Array.isArray(value)) {
-      value.forEach(v => {
+      value.forEach((v) => {
         addParent(v, childParent);
       });
     } else if (value && typeof value === 'object') {

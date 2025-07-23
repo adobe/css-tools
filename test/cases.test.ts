@@ -1,10 +1,10 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import {parse, stringify} from '../src/index';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { parse, stringify } from '../src/index';
 
 const cases = fs.readdirSync(path.join(__dirname, 'cases'));
 cases.forEach((name: string) => {
-  describe('cases/' + name, () => {
+  describe(`cases/${name}`, () => {
     const dir = path.join(__dirname, 'cases', name);
     const inputFile = path.join(dir, 'input.css');
     const astFile = path.join(dir, 'ast.json');
@@ -28,7 +28,7 @@ cases.forEach((name: string) => {
     });
 
     it('should match compressed.css', () => {
-      const compressed = stringify(parseInput(), {compress: true});
+      const compressed = stringify(parseInput(), { compress: true });
       if (!fs.existsSync(compressedFile)) {
         writeFile(compressedFile, compressed);
       }
@@ -36,7 +36,7 @@ cases.forEach((name: string) => {
     });
 
     function parseInput() {
-      return parse(readFile(inputFile), {source: 'input.css'});
+      return parse(readFile(inputFile), { source: 'input.css' });
     }
   });
 });

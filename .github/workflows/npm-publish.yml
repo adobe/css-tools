@@ -13,10 +13,10 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 18
-          cache: 'yarn'
+          cache: 'npm'
       - name: install
-        run: yarn install
-      - run: yarn run test
+        run: npm install
+      - run: npm run test
       - uses: JS-DevTools/npm-publish@v1
         with:
           token: ${{ secrets.ADOBE_BOT_NPM_TOKEN }}

@@ -1,25 +1,25 @@
 import {
-  CssAllNodesAST,
-  CssCharsetAST,
-  CssCommentAST,
-  CssCommonPositionAST,
-  CssContainerAST,
-  CssCustomMediaAST,
-  CssDeclarationAST,
-  CssDocumentAST,
-  CssFontFaceAST,
-  CssHostAST,
-  CssImportAST,
-  CssKeyframeAST,
-  CssKeyframesAST,
-  CssLayerAST,
-  CssMediaAST,
-  CssNamespaceAST,
-  CssPageAST,
-  CssRuleAST,
-  CssStartingStyleAST,
-  CssStylesheetAST,
-  CssSupportsAST,
+  type CssAllNodesAST,
+  type CssCharsetAST,
+  type CssCommentAST,
+  type CssCommonPositionAST,
+  type CssContainerAST,
+  type CssCustomMediaAST,
+  type CssDeclarationAST,
+  type CssDocumentAST,
+  type CssFontFaceAST,
+  type CssHostAST,
+  type CssImportAST,
+  type CssKeyframeAST,
+  type CssKeyframesAST,
+  type CssLayerAST,
+  type CssMediaAST,
+  type CssNamespaceAST,
+  type CssPageAST,
+  type CssRuleAST,
+  type CssStartingStyleAST,
+  type CssStylesheetAST,
+  type CssSupportsAST,
   CssTypes,
 } from '../type';
 
@@ -141,7 +141,7 @@ class Compiler {
     if (this.compress) {
       return this.emit('', node.position);
     }
-    return this.emit(this.indent() + '/*' + node.comment + '*/', node.position);
+    return this.emit(`${this.indent()}/*${node.comment}*/`, node.position);
   }
 
   /**
@@ -150,17 +150,17 @@ class Compiler {
   container(node: CssContainerAST) {
     if (this.compress) {
       return (
-        this.emit('@container ' + node.container, node.position) +
+        this.emit(`@container ${node.container}`, node.position) +
         this.emit('{') +
         this.mapVisit(node.rules) +
         this.emit('}')
       );
     }
     return (
-      this.emit(this.indent() + '@container ' + node.container, node.position) +
-      this.emit(' {\n' + this.indent(1)) +
+      this.emit(`${this.indent()}@container ${node.container}`, node.position) +
+      this.emit(` {\n${this.indent(1)}`) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit('\n' + this.indent(-1) + this.indent() + '}')
+      this.emit(`\n${this.indent(-1)}${this.indent()}}`)
     );
   }
 
@@ -170,7 +170,7 @@ class Compiler {
   layer(node: CssLayerAST) {
     if (this.compress) {
       return (
-        this.emit('@layer ' + node.layer, node.position) +
+        this.emit(`@layer ${node.layer}`, node.position) +
         (node.rules
           ? this.emit('{') +
             this.mapVisit(<CssAllNodesAST[]>node.rules) +
@@ -179,11 +179,11 @@ class Compiler {
       );
     }
     return (
-      this.emit(this.indent() + '@layer ' + node.layer, node.position) +
+      this.emit(`${this.indent()}@layer ${node.layer}`, node.position) +
       (node.rules
-        ? this.emit(' {\n' + this.indent(1)) +
+        ? this.emit(` {\n${this.indent(1)}`) +
           this.mapVisit(<CssAllNodesAST[]>node.rules, '\n\n') +
-          this.emit('\n' + this.indent(-1) + this.indent() + '}')
+          this.emit(`\n${this.indent(-1)}${this.indent()}}`)
         : ';')
     );
   }
@@ -192,7 +192,7 @@ class Compiler {
    * Visit import node.
    */
   import(node: CssImportAST) {
-    return this.emit('@import ' + node.import + ';', node.position);
+    return this.emit(`@import ${node.import};`, node.position);
   }
 
   /**
@@ -201,17 +201,17 @@ class Compiler {
   media(node: CssMediaAST) {
     if (this.compress) {
       return (
-        this.emit('@media ' + node.media, node.position) +
+        this.emit(`@media ${node.media}`, node.position) +
         this.emit('{') +
         this.mapVisit(node.rules) +
         this.emit('}')
       );
     }
     return (
-      this.emit(this.indent() + '@media ' + node.media, node.position) +
-      this.emit(' {\n' + this.indent(1)) +
+      this.emit(`${this.indent()}@media ${node.media}`, node.position) +
+      this.emit(` {\n${this.indent(1)}`) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit('\n' + this.indent(-1) + this.indent() + '}')
+      this.emit(`\n${this.indent(-1)}${this.indent()}}`)
     );
   }
 
@@ -219,7 +219,7 @@ class Compiler {
    * Visit document node.
    */
   document(node: CssDocumentAST) {
-    const doc = '@' + (node.vendor || '') + 'document ' + node.document;
+    const doc = `@${node.vendor || ''}document ${node.document}`;
     if (this.compress) {
       return (
         this.emit(doc, node.position) +
@@ -230,9 +230,9 @@ class Compiler {
     }
     return (
       this.emit(doc, node.position) +
-      this.emit(' ' + ' {\n' + this.indent(1)) +
+      this.emit(`  {\n${this.indent(1)}`) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit(this.indent(-1) + '\n}')
+      this.emit(`${this.indent(-1)}\n}`)
     );
   }
 
@@ -240,14 +240,14 @@ class Compiler {
    * Visit charset node.
    */
   charset(node: CssCharsetAST) {
-    return this.emit('@charset ' + node.charset + ';', node.position);
+    return this.emit(`@charset ${node.charset};`, node.position);
   }
 
   /**
    * Visit namespace node.
    */
   namespace(node: CssNamespaceAST) {
-    return this.emit('@namespace ' + node.namespace + ';', node.position);
+    return this.emit(`@namespace ${node.namespace};`, node.position);
   }
 
   /**
@@ -263,10 +263,10 @@ class Compiler {
       );
     }
     return (
-      this.emit(this.indent() + '@starting-style', node.position) +
-      this.emit(' {\n' + this.indent(1)) +
+      this.emit(`${this.indent()}@starting-style`, node.position) +
+      this.emit(` {\n${this.indent(1)}`) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit('\n' + this.indent(-1) + this.indent() + '}')
+      this.emit(`\n${this.indent(-1)}${this.indent()}}`)
     );
   }
 
@@ -276,17 +276,17 @@ class Compiler {
   supports(node: CssSupportsAST) {
     if (this.compress) {
       return (
-        this.emit('@supports ' + node.supports, node.position) +
+        this.emit(`@supports ${node.supports}`, node.position) +
         this.emit('{') +
         this.mapVisit(node.rules) +
         this.emit('}')
       );
     }
     return (
-      this.emit(this.indent() + '@supports ' + node.supports, node.position) +
-      this.emit(' {\n' + this.indent(1)) +
+      this.emit(`${this.indent()}@supports ${node.supports}`, node.position) +
+      this.emit(` {\n${this.indent(1)}`) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit('\n' + this.indent(-1) + this.indent() + '}')
+      this.emit(`\n${this.indent(-1)}${this.indent()}}`)
     );
   }
 
@@ -297,7 +297,7 @@ class Compiler {
     if (this.compress) {
       return (
         this.emit(
-          '@' + (node.vendor || '') + 'keyframes ' + node.name,
+          `@${node.vendor || ''}keyframes ${node.name}`,
           node.position,
         ) +
         this.emit('{') +
@@ -306,13 +306,10 @@ class Compiler {
       );
     }
     return (
-      this.emit(
-        '@' + (node.vendor || '') + 'keyframes ' + node.name,
-        node.position,
-      ) +
-      this.emit(' {\n' + this.indent(1)) +
+      this.emit(`@${node.vendor || ''}keyframes ${node.name}`, node.position) +
+      this.emit(` {\n${this.indent(1)}`) +
       this.mapVisit(node.keyframes, '\n') +
-      this.emit(this.indent(-1) + '}')
+      this.emit(`${this.indent(-1)}}`)
     );
   }
 
@@ -333,9 +330,9 @@ class Compiler {
     return (
       this.emit(this.indent()) +
       this.emit(node.values.join(', '), node.position) +
-      this.emit(' {\n' + this.indent(1)) +
+      this.emit(` {\n${this.indent(1)}`) +
       this.mapVisit(decls, '\n') +
-      this.emit(this.indent(-1) + '\n' + this.indent() + '}\n')
+      this.emit(`${this.indent(-1)}\n${this.indent()}}\n`)
     );
   }
 
@@ -347,16 +344,16 @@ class Compiler {
       const sel = node.selectors.length ? node.selectors.join(', ') : '';
 
       return (
-        this.emit('@page ' + sel, node.position) +
+        this.emit(`@page ${sel}`, node.position) +
         this.emit('{') +
         this.mapVisit(node.declarations) +
         this.emit('}')
       );
     }
-    const sel = node.selectors.length ? node.selectors.join(', ') + ' ' : '';
+    const sel = node.selectors.length ? `${node.selectors.join(', ')} ` : '';
 
     return (
-      this.emit('@page ' + sel, node.position) +
+      this.emit(`@page ${sel}`, node.position) +
       this.emit('{\n') +
       this.emit(this.indent(1)) +
       this.mapVisit(node.declarations, '\n') +
@@ -401,9 +398,9 @@ class Compiler {
     }
     return (
       this.emit('@host', node.position) +
-      this.emit(' {\n' + this.indent(1)) +
+      this.emit(` {\n${this.indent(1)}`) +
       this.mapVisit(node.rules, '\n\n') +
-      this.emit(this.indent(-1) + '\n}')
+      this.emit(`${this.indent(-1)}\n}`)
     );
   }
 
@@ -412,7 +409,7 @@ class Compiler {
    */
   customMedia(node: CssCustomMediaAST) {
     return this.emit(
-      '@custom-media ' + node.name + ' ' + node.media + ';',
+      `@custom-media ${node.name} ${node.media};`,
       node.position,
     );
   }
@@ -439,7 +436,7 @@ class Compiler {
     return (
       this.emit(
         node.selectors
-          .map(s => {
+          .map((s) => {
             return indent + s;
           })
           .join(',\n'),
@@ -449,7 +446,7 @@ class Compiler {
       this.emit(this.indent(1)) +
       this.mapVisit(decls, '\n') +
       this.emit(this.indent(-1)) +
-      this.emit('\n' + this.indent() + '}')
+      this.emit(`\n${this.indent()}}`)
     );
   }
 
@@ -459,7 +456,7 @@ class Compiler {
   declaration(node: CssDeclarationAST) {
     if (this.compress) {
       return (
-        this.emit(node.property + ':' + node.value, node.position) +
+        this.emit(`${node.property}:${node.value}`, node.position) +
         this.emit(';')
       );
     }
@@ -476,7 +473,7 @@ class Compiler {
       );
     return (
       this.emit(this.indent()) +
-      this.emit(node.property + ': ' + node.value, node.position) +
+      this.emit(`${node.property}: ${node.value}`, node.position) +
       this.emit(';')
     );
   }

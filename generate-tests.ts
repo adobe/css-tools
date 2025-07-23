@@ -1,8 +1,10 @@
 // Generates missing output source and AST files for the test cases
 // IMPORTANT: Always verify the generated files when using this!
 
-const fs = require('fs');
-const path = require('path');
+import type { CssStylesheetAST } from './src';
+
+const fs = require('node:fs');
+const path = require('node:path');
 const parse = require('./').parse;
 const stringify = require('./').stringify;
 
@@ -14,12 +16,12 @@ const cases = fs.readdirSync(casesDir).map((f: string) => {
 cases.forEach((dir: string) => {
   const inputFile = path.join(dir, 'input.css');
   if (!fs.existsSync(inputFile))
-    throw new Error('Missing input file ' + inputFile);
+    throw new Error(`Missing input file ${inputFile}`);
 
   const input = fs.readFileSync(inputFile, 'utf8');
-  let parsed;
+  let parsed: CssStylesheetAST;
   try {
-    parsed = parse(input, {source: 'input.css'});
+    parsed = parse(input, { source: 'input.css' });
   } catch (e) {
     console.log('Failed to parse', inputFile);
     throw e;
@@ -35,7 +37,7 @@ cases.forEach((dir: string) => {
   const compressedFile = path.join(dir, 'compressed.css');
   if (!fs.existsSync(compressedFile)) {
     console.log('Generating', compressedFile);
-    const compressed = stringify(parsed, {compress: true});
+    const compressed = stringify(parsed, { compress: true });
     fs.writeFileSync(compressedFile, compressed, 'utf8');
   }
 
