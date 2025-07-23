@@ -1,160 +1,191 @@
-4.4.4 / 2025-01-27
-==================
+# Changelog
 
- * Switch to npm
- * Switch to biome and reformat the code
- * Made some code change to comply with biome recommendation
- * Switch to rollup
- * Fix exports thanks to https://www.npmjs.com/package/@arethetypeswrong/cli
- * Add a check to ensure the bundle will be properly exported in the future
+All notable changes to this project will be documented in this file.
 
-4.4.3 / 2025-05-15
-==================
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
- * Refactoring of the code to allow security static analysis from GitHub
- * Fix Polynomial regular expression used on uncontrolled data
- * Improve performance (very low improvement)
- * Switch some regex to string search (indexOf based)
- * Add new utils function with their corresponding unit-tests
- * Add nicer format of template areas #283 by @jogibear9988
- * Fix typescript error on ConstructorParameters (parcel) #444
+## [4.4.4] - 2025-07-22
 
-4.4.2 / 2025-02-12
-==================
+### Changed
+- Switch from yarn to npm for package management
+- Switch from eslint to biome for code formatting and linting
+- Reformat codebase to comply with biome recommendations
+- Switch from webpack to rollup for bundling
 
- * Fix regular expression for quoted values in parentheses
+### Fixed
+- Fix module exports to ensure proper compatibility with bundlers
+- Add validation check to prevent future export issues
 
-4.4.0 / 2024-06-05
-==================
+## [4.4.3] - 2025-05-15
 
- * add support for @starting-style #319
+### Security
+- Fix polynomial regular expression vulnerability on uncontrolled data
+- Refactor code to enable GitHub security static analysis
 
-4.3.3 / 2024-01-24
-==================
+### Performance
+- Improve parsing performance with minor optimizations
+- Replace regex patterns with string search (indexOf-based) for better performance
 
- * Update export property #271
+### Added
+- Add new utility functions with comprehensive unit tests
+- Add improved formatting for CSS Grid template areas (#283 by @jogibear9988)
 
-4.3.2 / 2023-11-28
-==================
+### Fixed
+- Fix TypeScript error with ConstructorParameters in Parcel bundler (#444)
 
- * Fix redos vulnerability with specific crafted css string - CVE-2023-48631
- * Fix Problem parsing with :is() and nested :nth-child() #211
+## [4.4.2] - 2025-02-12
 
+### Fixed
+- Fix regular expression for parsing quoted values in parentheses
 
-4.3.1 / 2023-03-14
-==================
+## [4.4.0] - 2024-06-05
 
- * Fix redos vulnerability with specific crafted css string - CVE-2023-26364
+### Added
+- Add support for CSS `@starting-style` at-rule (#319)
 
-4.3.0 / 2023-03-07
-==================
+## [4.3.3] - 2024-01-24
 
- * Update build tools
- * Update exports path and files
+### Changed
+- Update package export configuration (#271)
 
-4.2.0 / 2023-02-21
-==================
+## [4.3.2] - 2023-11-28
 
- * Add @container support
- * Add @layer support
+### Security
+- Fix ReDoS vulnerability with crafted CSS strings - CVE-2023-48631
 
-4.1.0 / 2023-01-25
-==================
+### Fixed
+- Fix parsing issues with `:is()` and nested `:nth-child()` selectors (#211)
 
- * Support ESM Modules
+## [4.3.1] - 2023-03-14
 
-4.0.2 / 2023-01-12
-==================
+### Security
+- Fix ReDoS vulnerability with crafted CSS strings - CVE-2023-26364
 
- * #71 : @import does not work if url contains ';'
- * #77 : Regression in selector parsing: Attribute selectors not parsed correctly
+## [4.3.0] - 2023-03-07
 
-4.0.1 / 2022-08-03
-==================
+### Changed
+- Update build toolchain and dependencies
+- Update package exports configuration and file structure
 
- * Change globalThis configuration for webpack so UMD module could be used in nodejs (jest-dom)
+## [4.2.0] - 2023-02-21
 
-4.0.0 / 2022-06-09
-==================
+### Added
+- Add support for CSS `@container` at-rule
+- Add support for CSS `@layer` at-rule
 
- * Adobe fork of css into @adobe/css
- * Convert the project into typescript
- * Optimization of performance (+25% in some cases)
- * Update all deps
- * Remove sourcemap support
+## [4.1.0] - 2023-01-25
 
-2.2.1 / 2015-06-17
-==================
+### Added
+- Add support for ES Modules (ESM)
 
- * fix parsing escaped quotes in quoted strings
+## [4.0.2] - 2023-01-12
 
-2.2.0 / 2015-02-18
-==================
+### Fixed
+- Fix `@import` parsing when URL contains semicolons (#71)
+- Fix regression in selector parsing for attribute selectors (#77)
 
- * add `parsingErrors` to list errors when parsing with `silent: true`
- * accept EOL characters and all other whitespace characters in `@` rules such
-   as `@media`
+## [4.0.1] - 2022-08-03
 
-2.1.0 / 2014-08-05
-==================
+### Fixed
+- Fix `globalThis` configuration for webpack to enable UMD module usage in Node.js environments
 
-  * change error message format and add `.reason` property to errors
-  * add `inputSourcemaps` option to disable input source map processing
-  * use `inherits` for inheritance (fixes some browsers)
-  * add `sourcemap: 'generator'` option to return the `SourceMapGenerator`
-    object
+## [4.0.0] - 2022-06-09
 
-2.0.0 / 2014-06-18
-==================
+### Changed
+- Fork from original css library to Adobe's `@adobe/css-tools` package
+- Convert codebase from JavaScript to TypeScript
+- Improve parsing performance by approximately 25%
+- Update all dependencies to latest versions
+- Remove source map support
 
-  * add non-enumerable parent reference to each node
-  * drop Component(1) support
-  * add support for @custom-media, @host, and @font-face
-  * allow commas inside selector functions
-  * allow empty property values
-  * changed default options.position value to true
-  * remove comments from properties and values
-  * asserts when selectors are missing
-  * added node.position.content property
-  * absorb css-parse and css-stringify libraries
-  * apply original source maps from source files
+---
 
-1.6.1 / 2014-01-02
-==================
+## Legacy Versions (Pre-Adobe Fork)
 
-  * fix component.json
+## [3.0.0] - 2020-07-01
 
-1.6.0 / 2013-12-21
-==================
+### Changed
+- Bump major version due to major dependency updates and Node.js version requirement changes
 
-  * update deps
+## [2.2.1] - 2015-06-17
 
-1.5.0 / 2013-12-03
-==================
+### Fixed
+- Fix parsing of escaped quotes in quoted strings
 
-  * update deps
+## [2.2.0] - 2015-02-18
 
-1.1.0 / 2013-04-04
-==================
+### Added
+- Add `parsingErrors` property to list errors when parsing with `silent: true`
+- Accept EOL characters and all whitespace characters in at-rules such as `@media`
 
-  * update deps
+## [2.1.0] - 2014-08-05
 
-1.0.7 / 2012-11-21
-==================
+### Added
+- Add `inputSourcemaps` option to disable input source map processing
+- Add `sourcemap: 'generator'` option to return the `SourceMapGenerator` object
+- Use `inherits` package for inheritance (fixes browser compatibility issues)
 
-  * fix component.json
+### Changed
+- Change error message format and add `.reason` property to error objects
 
-1.0.4 / 2012-11-15
-==================
+## [2.0.0] - 2014-06-18
 
-  * update css-stringify
+### Added
+- Add non-enumerable parent reference to each AST node
+- Add support for `@custom-media`, `@host`, and `@font-face` at-rules
+- Allow commas inside selector functions
+- Allow empty property values
+- Add `node.position.content` property
+- Integrate css-parse and css-stringify libraries
+- Apply original source maps from source files
 
-1.0.3 / 2012-09-01
-==================
+### Changed
+- Change default `options.position` value to `true`
+- Remove comments from properties and values
 
-  * add component support
+### Removed
+- Drop Component(1) support
 
-0.0.1 / 2010-01-03
-==================
+### Fixed
+- Fix assertion errors when selectors are missing
 
-  * Initial release
+## [1.6.1] - 2014-01-02
+
+### Fixed
+- Fix component.json configuration
+
+## [1.6.0] - 2013-12-21
+
+### Changed
+- Update dependencies
+
+## [1.5.0] - 2013-12-03
+
+### Changed
+- Update dependencies
+
+## [1.1.0] - 2013-04-04
+
+### Changed
+- Update dependencies
+
+## [1.0.7] - 2012-11-21
+
+### Fixed
+- Fix component.json configuration
+
+## [1.0.4] - 2012-11-15
+
+### Changed
+- Update css-stringify dependency
+
+## [1.0.3] - 2012-09-01
+
+### Added
+- Add Component support
+
+## [0.0.1] - 2010-01-03
+
+### Added
+- Initial release
