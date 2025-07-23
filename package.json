@@ -35,7 +35,6 @@
     "@types/node": "^22.15.19",
     "benchmark": "^2.1.4",
     "bytes": "^3.1.0",
-    "gts": "^6.0.2",
     "jest": "^29.6.2",
     "rollup": "^4.45.1",
     "rollup-plugin-dts": "^6.2.1",
@@ -45,16 +44,13 @@
   "scripts": {
     "benchmark": "node benchmark/index.mjs",
     "test": "jest",
-    "clean": "gts clean && rm -rf ./dist",
+    "clean": "rm -rf ./dist",
     "build": "npx rollup -c",
-    "fix": "gts fix",
-    "lint": "gts lint",
+    "fix": "biome check --write",
+    "lint": "biome check",
     "prepack": "npm run build",
     "prepare": "npm run build",
     "posttest": "npm run lint"
-  },
-  "engines": {
-    "node": ">=20"
   },
   "author": "TJ Holowaychuk <tj@vision-media.ca>",
   "contributors": [

@@ -2,7 +2,7 @@
 
 > This is a fork of the npm css package due to low maintenance
 
-CSS parser / stringifier.
+CSS parser / stringifier with TypeScript support.
 
 ## Installation
 
@@ -12,7 +12,11 @@ CSS parser / stringifier.
 
 ```js
 import { parse, stringify } from '@adobe/css-tools'
+
+// Parse CSS to AST
 let obj = parse('body { font-size: 12px; }', options);
+
+// Stringify AST back to CSS
 let css = stringify(obj, options);
 ```
 
@@ -24,8 +28,8 @@ Accepts a CSS string and returns an AST `object`.
 
 `options`:
 
-- silent: silently fail on parse errors.
-- source: the path to the file containing `css`. Makes errors and source
+- `silent`: `boolean` - Silently fail on parse errors.
+- `source`: `string` - The path to the file containing `css`. Makes errors and source
   maps more helpful, by letting them know where code comes from.
 
 ### stringify(object, [options])
@@ -34,28 +38,41 @@ Accepts an AST `object` (as `css.parse` produces) and returns a CSS string.
 
 `options`:
 
-- indent: the string used to indent the output. Defaults to two spaces.
-- compress: omit comments and extraneous whitespace.
+- `indent`: `string` - The string used to indent the output. Defaults to two spaces.
+- `compress`: `boolean` - Omit comments and extraneous whitespace.
 
 ### Example
 
 ```js
+import { parse, stringify } from '@adobe/css-tools'
+
 var ast = parse('body { font-size: 12px; }', { source: 'source.css' });
 
 var css = stringify(ast);
+```
+
+### TypeScript Support
+
+This package includes full TypeScript support with comprehensive type definitions:
+
+```typescript
+import { parse, stringify, CssStylesheetAST } from '@adobe/css-tools'
+
+const ast: CssStylesheetAST = parse('body { font-size: 12px; }');
+const css: string = stringify(ast);
 ```
 
 ### Errors
 
 Errors thrown during parsing have the following properties:
 
-- message: `String`. The full error message with the source position.
-- reason: `String`. The error message without position.
-- filename: `String` or `undefined`. The value of `options.source` if
+- `message`: `string` - The full error message with the source position.
+- `reason`: `string` - The error message without position.
+- `filename`: `string` or `undefined` - The value of `options.source` if
   passed to `css.parse`. Otherwise `undefined`.
-- line: `Integer`.
-- column: `Integer`.
-- source: `String`. The portion of code that couldn't be parsed.
+- `line`: `number`.
+- `column`: `number`.
+- `source`: `string` - The portion of code that couldn't be parsed.
 
 When parsing with the `silent` option, errors are listed in the
 `parsingErrors` property of the [`stylesheet`](#stylesheet) node instead
@@ -80,15 +97,15 @@ the node.
 
 `Object`:
 
-- start: `Object`:
-  - line: `Number`.
-  - column: `Number`.
-- end: `Object`:
-  - line: `Number`.
-  - column: `Number`.
-- source: `String` or `undefined`. The value of `options.source` if passed to
+- `start`: `Object`:
+  - `line`: `number`.
+  - `column`: `number`.
+- `end`: `Object`:
+  - `line`: `number`.
+  - `column`: `number`.
+- `source`: `string` or `undefined`. The value of `options.source` if passed to
   `css.parse`. Otherwise `undefined`.
-- content: `String`. The full source string passed to `css.parse`.
+- `content`: `string`. The full source string passed to `css.parse`.
 
 The line and column numbers are 1-based: The first line is 1 and the first
 column of a line is 1 (not 0).
@@ -99,7 +116,7 @@ parsed into the node.
 
 #### type
 
-`String`. The possible values are the ones listed in the Types section below.
+`string`. The possible values are the ones listed in the Types section below.
 
 #### parent
 
@@ -114,23 +131,23 @@ properties of each node (other than the common properties listed above.)
 
 The root node returned by `css.parse`.
 
-- stylesheet: `Object`:
-  - rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `stylesheet`: `Object`:
+  - `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
     at-rule types.
-  - parsingErrors: `Array` of `Error`s. Errors collected during parsing when
+  - `parsingErrors`: `Array` of `Error`s. Errors collected during parsing when
     option `silent` is true.
 
 #### rule
 
-- selectors: `Array` of `String`s. The list of selectors of the rule, split
+- `selectors`: `Array` of `string`s. The list of selectors of the rule, split
   on commas. Each selector is trimmed from whitespace and comments.
-- declarations: `Array` of nodes with the types `declaration` and `comment`.
+- `declarations`: `Array` of nodes with the types `declaration` and `comment`.
 
 #### declaration
 
-- property: `String`. The property name, trimmed from whitespace and
+- `property`: `string`. The property name, trimmed from whitespace and
   comments. May not be empty.
-- value: `String`. The value of the property, trimmed from whitespace and
+- `value`: `string`. The value of the property, trimmed from whitespace and
   comments. Empty values are allowed.
 
 #### comment
@@ -138,117 +155,117 @@ The root node returned by `css.parse`.
 A rule-level or declaration-level comment. Comments inside selectors,
 properties and values etc. are lost.
 
-- comment: `String`. The part between the starting `/*` and the ending `*/`
+- `comment`: `string`. The part between the starting `/*` and the ending `*/`
   of the comment, including whitespace.
 
 #### charset
 
 The `@charset` at-rule.
 
-- charset: `String`. The part following `@charset `.
+- `charset`: `string`. The part following `@charset `.
 
 #### custom-media
 
 The `@custom-media` at-rule.
 
-- name: `String`. The `--`-prefixed name.
-- media: `String`. The part following the name.
+- `name`: `string`. The `--`-prefixed name.
+- `media`: `string`. The part following the name.
 
 #### document
 
 The `@document` at-rule.
 
-- document: `String`. The part following `@document `.
-- vendor: `String` or `undefined`. The vendor prefix in `@document`, or
+- `document`: `string`. The part following `@document `.
+- `vendor`: `string` or `undefined`. The vendor prefix in `@document`, or
   `undefined` if there is none.
-- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types.
 
 #### font-face
 
 The `@font-face` at-rule.
 
-- declarations: `Array` of nodes with the types `declaration` and `comment`.
+- `declarations`: `Array` of nodes with the types `declaration` and `comment`.
 
 #### host
 
 The `@host` at-rule.
 
-- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types.
 
 #### import
 
 The `@import` at-rule.
 
-- import: `String`. The part following `@import `.
+- `import`: `string`. The part following `@import `.
 
 #### keyframes
 
 The `@keyframes` at-rule.
 
-- name: `String`. The name of the keyframes rule.
-- vendor: `String` or `undefined`. The vendor prefix in `@keyframes`, or
+- `name`: `string`. The name of the keyframes rule.
+- `vendor`: `string` or `undefined`. The vendor prefix in `@keyframes`, or
   `undefined` if there is none.
-- keyframes: `Array` of nodes with the types `keyframe` and `comment`.
+- `keyframes`: `Array` of nodes with the types `keyframe` and `comment`.
 
 #### keyframe
 
-- values: `Array` of `String`s. The list of “selectors” of the keyframe rule,
-  split on commas. Each “selector” is trimmed from whitespace.
-- declarations: `Array` of nodes with the types `declaration` and `comment`.
+- `values`: `Array` of `string`s. The list of "selectors" of the keyframe rule,
+  split on commas. Each "selector" is trimmed from whitespace.
+- `declarations`: `Array` of nodes with the types `declaration` and `comment`.
 
 #### media
 
 The `@media` at-rule.
 
-- media: `String`. The part following `@media `.
-- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `media`: `string`. The part following `@media `.
+- `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types.
 
 #### namespace
 
 The `@namespace` at-rule.
 
-- namespace: `String`. The part following `@namespace `.
+- `namespace`: `string`. The part following `@namespace `.
 
 #### page
 
 The `@page` at-rule.
 
-- selectors: `Array` of `String`s. The list of selectors of the rule, split
+- `selectors`: `Array` of `string`s. The list of selectors of the rule, split
   on commas. Each selector is trimmed from whitespace and comments.
-- declarations: `Array` of nodes with the types `declaration` and `comment`.
+- `declarations`: `Array` of nodes with the types `declaration` and `comment`.
 
 #### supports
 
 The `@supports` at-rule.
 
-- supports: `String`. The part following `@supports `.
-- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `supports`: `string`. The part following `@supports `.
+- `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types.
 
-### container
+#### container
 
 The `@container` at-rule.
 
-- conatiner: `String`. The part following `@container `.
-- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `container`: `string`. The part following `@container `.
+- `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types.
 
-### layer
+#### layer
 
 The `@layer` at-rule.
 
-- layer: `String`. The part following `@layer `.
-- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `layer`: `string`. The part following `@layer `.
+- `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types. This may be null, if the rule did not contain any.
 
-### starting-style
+#### starting-style
 
 The `@starting-style` at-rule.
 
-- rules: `Array` of nodes with the types `rule`, `comment` and any of the
+- `rules`: `Array` of nodes with the types `rule`, `comment` and any of the
   at-rule types.
 
 ### Example
@@ -321,6 +338,18 @@ Parse tree:
   }
 }
 ```
+
+## Features
+
+- **Modern CSS Support**: Includes support for modern CSS features like `@container`, `@layer`, and `@starting-style`
+- **TypeScript**: Full TypeScript support with comprehensive type definitions
+- **Performance**: Optimized for better performance compared to the original css package
+- **Security**: Regular security updates and vulnerability fixes
+- **ESM & CJS**: Supports both ES modules and CommonJS
+
+## Requirements
+
+- Node.js >= 20
 
 ## License
 

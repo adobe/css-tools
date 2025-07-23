@@ -8,6 +8,6 @@ console.log('Input:');
 console.dir(css);
 console.log('Example of parse:');
 const parse = cssTools.parse(css);
-console.dir(parse, {depth: null});
+console.dir(parse, { depth: null });
 console.log('Example of stringify:');
-console.dir(cssTools.stringify(parse, {indent: true}));
+console.dir(cssTools.stringify(parse, { indent: true }));

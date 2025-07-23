@@ -12,7 +12,7 @@ export default class CssParseError extends Error {
     column: number,
     css: string,
   ) {
-    super(filename + ':' + lineno + ':' + column + ': ' + msg);
+    super(`${filename}:${lineno}:${column}: ${msg}`);
     this.reason = msg;
     this.filename = filename;
     this.line = lineno;

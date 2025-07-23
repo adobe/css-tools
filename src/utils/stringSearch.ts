@@ -24,9 +24,9 @@ export const indexOfArrayNonEscaped = (
   let currentPosition = position;
   let maxLoop = MAX_LOOP;
   do {
-    const all = search.map(v => string.indexOf(v, currentPosition));
+    const all = search.map((v) => string.indexOf(v, currentPosition));
     all.push(string.indexOf('\\', currentPosition));
-    const foundAll = all.filter(v => v !== -1);
+    const foundAll = all.filter((v) => v !== -1);
     if (foundAll.length === 0) {
       return -1;
     }
@@ -75,14 +75,14 @@ export const indexOfArrayWithBracketAndQuoteSupport = (
   let maxLoop = MAX_LOOP;
 
   do {
-    const all = search.map(v => string.indexOf(v, currentSearchPosition));
+    const all = search.map((v) => string.indexOf(v, currentSearchPosition));
 
     all.push(string.indexOf('(', currentSearchPosition));
     all.push(string.indexOf('"', currentSearchPosition));
     all.push(string.indexOf("'", currentSearchPosition));
     all.push(string.indexOf('\\', currentSearchPosition));
 
-    const foundAll = all.filter(v => v !== -1);
+    const foundAll = all.filter((v) => v !== -1);
     if (foundAll.length === 0) {
       return -1;
     }

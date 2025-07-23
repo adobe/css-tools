@@ -1,5 +1,4 @@
 node_modules
 dist
-.parcel-cache
 yarn-error.log
 .rollup.cache

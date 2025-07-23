@@ -1,4 +1,4 @@
-import {createDefaultEsmPreset} from 'ts-jest';
+import { createDefaultEsmPreset } from 'ts-jest';
 
 const ignores = ['/node_modules/', '__mocks__', '/dist/'];
 const tsJestTransformCfg = createDefaultEsmPreset();

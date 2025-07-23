@@ -1,9 +1,8 @@
+import commonjs from '@rollup/plugin-commonjs';
+import resolve from '@rollup/plugin-node-resolve';
+import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
 import dts from 'rollup-plugin-dts';
-import terser from '@rollup/plugin-terser';
-
-import resolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
 
 const config = [
   {
@@ -71,9 +70,9 @@ const config = [
   {
     input: 'src/index.ts',
     output: [
-      {file: 'dist/esm/adobe-css-tools.d.mts', format: 'es'},
-      {file: 'dist/cjs/adobe-css-tools.d.cts', format: 'es'},
-      {file: 'dist/umd/adobe-css-tools.d.ts', format: 'es'},
+      { file: 'dist/esm/adobe-css-tools.d.mts', format: 'es' },
+      { file: 'dist/cjs/adobe-css-tools.d.cts', format: 'es' },
+      { file: 'dist/umd/adobe-css-tools.d.ts', format: 'es' },
     ],
     plugins: [dts()],
   },

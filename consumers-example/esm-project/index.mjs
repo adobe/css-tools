@@ -1,13 +1,15 @@
 // ESM
-import packageJson from '@adobe/css-tools/package.json' with {type: 'json'};
+import packageJson from '@adobe/css-tools/package.json' with { type: 'json' };
+
 console.log('cssToolsVersion', packageJson.version);
 
-import {parse, stringify} from '@adobe/css-tools';
+import { parse, stringify } from '@adobe/css-tools';
+
 const css = "foo {bar: 'baz';}";
 console.log('Input:');
 console.dir(css);
 console.log('Example of parse:');
 const parsed = parse(css);
-console.dir(parsed, {depth: null});
+console.dir(parsed, { depth: null });
 console.log('Example of stringify:');
-console.dir(stringify(parsed, {indent: true}));
+console.dir(stringify(parsed, { indent: true }));
