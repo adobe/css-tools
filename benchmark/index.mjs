@@ -1,5 +1,5 @@
 import bytes from 'bytes';
-import {parse} from '../dist/index.mjs';
+import {parse} from '../dist/esm/adobe-css-tools.mjs';
 import * as fs from 'fs';
 import benchmark from 'benchmark';
 
@@ -15,17 +15,17 @@ console.log();
 console.log(
   '  small : %s : %s lines',
   bytes(Buffer.byteLength(small)),
-  lines(small)
+  lines(small),
 );
 console.log(
   '  large : %s : %s lines',
   bytes(Buffer.byteLength(large)),
-  lines(large)
+  lines(large),
 );
 console.log(
   '   huge : %s : %s lines',
   bytes(Buffer.byteLength(huge)),
-  lines(huge)
+  lines(huge),
 );
 
 const suite = new benchmark.Suite();

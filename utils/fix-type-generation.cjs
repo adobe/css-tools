@@ -7,6 +7,6 @@ const {readFileSync, writeFileSync} = require('fs');
 let content = readFileSync(typePath, 'utf8');
 content = content.replace(
   /import\("src\/type"\)\.CssStylesheetAST/g,
-  'CssStylesheetAST'
+  'CssStylesheetAST',
 );
 writeFileSync(typePath, content, 'utf8');

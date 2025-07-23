@@ -10,10 +10,6 @@ updates:
     schedule:
       interval: "daily"
     groups:
-      parcel-packages:
-        patterns:
-          - "parcel"
-          - "@parcel/*"
       jest-packages:
         patterns:
           - "jest"
@@ -27,3 +23,7 @@ updates:
         patterns:
           - "bytes"
           - "@types/bytes"
+      rollup-packages:
+        patterns:
+          - "rollup"
+          - "@rollup/*"

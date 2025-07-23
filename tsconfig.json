@@ -2,8 +2,10 @@
   "extends": "./node_modules/gts/tsconfig-google.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "dist/cjs",
-    "resolveJsonModule": true
+    "outDir": "dist",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
   },
   "include": [
     "src/**/*.ts",
