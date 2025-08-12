@@ -1,6 +1,6 @@
-import CssParseError from '../src/CssParseError';
-import {parse} from '../src/index';
-import {CssMediaAST, CssRuleAST} from '../src/type';
+import type CssParseError from '../src/CssParseError';
+import { parse } from '../src/index';
+import type { CssMediaAST, CssRuleAST } from '../src/type';
 
 describe('parse(str)', () => {
   it('should save the filename and source', () => {
@@ -51,7 +51,7 @@ describe('parse(str)', () => {
 
   it('should not throw with silent option', () => {
     expect(() => {
-      parse('thing { color: red; } /* b { color: blue; }', {silent: true});
+      parse('thing { color: red; } /* b { color: blue; }', { silent: true });
     }).not.toThrow();
   });
 

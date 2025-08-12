@@ -1,17 +1,11 @@
-const ignores = ['/node_modules/', '__mocks__', '/dist/'];
+import { createDefaultEsmPreset } from 'ts-jest';
 
-/** @type {import('jest').Config} */
-module.exports = {
-  transform: {
-    '^.+\\.ts$': [
-      'ts-jest',
-      {
-        tsconfig: 'tsconfig.test.json',
-      },
-    ],
-  },
-  preset: 'ts-jest',
-  testEnvironment: 'node',
+const ignores = ['/node_modules/', '__mocks__', '/dist/'];
+const tsJestTransformCfg = createDefaultEsmPreset();
+
+/** @type {import("jest").Config} **/
+export default {
+  ...tsJestTransformCfg,
   collectCoverageFrom: [
     'src/**/*.+(js|jsx|ts|tsx)',
     '!**/node_modules/**',
