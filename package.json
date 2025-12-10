@@ -33,7 +33,7 @@
     "@types/benchmark": "^2.1.1",
     "@types/bytes": "^3.1.5",
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.0.3",
+    "@types/node": "^25.0.0",
     "benchmark": "^2.1.4",
     "bytes": "^3.1.0",
     "jest": "^30.0.5",
