@@ -6,10 +6,12 @@ import {
   type CssCommentAST,
   type CssCommonPositionAST,
   type CssContainerAST,
+  type CssCounterStyleAST,
   type CssCustomMediaAST,
   type CssDeclarationAST,
   type CssDocumentAST,
   type CssFontFaceAST,
+  type CssFontFeatureValuesAST,
   type CssGenericAtRuleAST,
   type CssHostAST,
   type CssImportAST,
@@ -19,10 +21,14 @@ import {
   type CssMediaAST,
   type CssNamespaceAST,
   type CssPageAST,
+  type CssPositionTryAST,
+  type CssPropertyAST,
   type CssRuleAST,
+  type CssScopeAST,
   type CssStartingStyleAST,
   type CssStylesheetAST,
   type CssSupportsAST,
+  type CssViewTransitionAST,
   CssTypes,
 } from '../type';
 import {
@@ -688,14 +694,26 @@ export const parse = (
     if (!open()) {
       return error("@page missing '{'");
     }
-    let decls = comments<CssDeclarationAST>();
+    const decls: Array<CssDeclarationAST | CssCommentAST | CssAtRuleAST> = [];
+    comments(decls);
 
-    // declarations
-    let decl: CssDeclarationAST | undefined = declaration();
-    while (decl) {
-      decls.push(decl);
-      decls = decls.concat(comments());
-      decl = declaration();
+    // declarations and nested at-rules (margin boxes)
+    while (css.length && css.charAt(0) !== '}') {
+      if (css.charAt(0) === '@') {
+        const ar = atRule();
+        if (ar) {
+          decls.push(ar);
+          comments(decls);
+          continue;
+        }
+      }
+      const decl = declaration();
+      if (decl) {
+        decls.push(decl);
+        comments(decls);
+        continue;
+      }
+      break;
     }
 
     if (!close()) {
@@ -771,6 +789,189 @@ export const parse = (
 
     return pos<CssFontFaceAST>({
       type: CssTypes.fontFace,
+      declarations: decls,
+    });
+  }
+
+  /**
+   * Parse @property.
+   */
+  function atProperty(): CssPropertyAST | undefined {
+    const pos = position();
+    const m = /^@property\s+(--[-\w]+)\s*/.exec(css);
+    if (!m) {
+      return;
+    }
+    const name = processMatch(m)[1];
+
+    if (!open()) {
+      return error("@property missing '{'");
+    }
+    let decls = comments<CssDeclarationAST>();
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
+      decls.push(decl);
+      decls = decls.concat(comments());
+      decl = declaration();
+    }
+    if (!close()) {
+      return error("@property missing '}'");
+    }
+
+    return pos<CssPropertyAST>({
+      type: CssTypes.property,
+      name: name,
+      declarations: decls,
+    });
+  }
+
+  /**
+   * Parse @counter-style.
+   */
+  function atCounterStyle(): CssCounterStyleAST | undefined {
+    const pos = position();
+    const m = /^@counter-style\s+([-\w]+)\s*/.exec(css);
+    if (!m) {
+      return;
+    }
+    const name = processMatch(m)[1];
+
+    if (!open()) {
+      return error("@counter-style missing '{'");
+    }
+    let decls = comments<CssDeclarationAST>();
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
+      decls.push(decl);
+      decls = decls.concat(comments());
+      decl = declaration();
+    }
+    if (!close()) {
+      return error("@counter-style missing '}'");
+    }
+
+    return pos<CssCounterStyleAST>({
+      type: CssTypes.counterStyle,
+      name: name,
+      declarations: decls,
+    });
+  }
+
+  /**
+   * Parse @font-feature-values.
+   */
+  function atFontFeatureValues(): CssFontFeatureValuesAST | undefined {
+    const pos = position();
+    const m = /^@font-feature-values\s+([^{]+)/.exec(css);
+    if (!m) {
+      return;
+    }
+    const fontFamily = trim(processMatch(m)[1]);
+
+    if (!open()) {
+      return error("@font-feature-values missing '{'");
+    }
+
+    const style = rulesOrDeclarations();
+
+    if (!close()) {
+      return error("@font-feature-values missing '}'");
+    }
+
+    return pos<CssFontFeatureValuesAST>({
+      type: CssTypes.fontFeatureValues,
+      fontFamily: fontFamily,
+      rules: style,
+    });
+  }
+
+  /**
+   * Parse @scope.
+   */
+  function atScope(): CssScopeAST | undefined {
+    const pos = position();
+    const m = /^@scope\s*([^{]*)/.exec(css);
+    if (!m) {
+      return;
+    }
+    const scope = trim(processMatch(m)[1]);
+
+    if (!open()) {
+      return error("@scope missing '{'");
+    }
+
+    const style = rulesOrDeclarations();
+
+    if (!close()) {
+      return error("@scope missing '}'");
+    }
+
+    return pos<CssScopeAST>({
+      type: CssTypes.scope,
+      scope: scope,
+      rules: style,
+    });
+  }
+
+  /**
+   * Parse @view-transition.
+   */
+  function atViewTransition(): CssViewTransitionAST | undefined {
+    const pos = position();
+    const m = /^@view-transition\s*/.exec(css);
+    if (!m) {
+      return;
+    }
+    processMatch(m);
+
+    if (!open()) {
+      return error("@view-transition missing '{'");
+    }
+    let decls = comments<CssDeclarationAST>();
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
+      decls.push(decl);
+      decls = decls.concat(comments());
+      decl = declaration();
+    }
+    if (!close()) {
+      return error("@view-transition missing '}'");
+    }
+
+    return pos<CssViewTransitionAST>({
+      type: CssTypes.viewTransition,
+      declarations: decls,
+    });
+  }
+
+  /**
+   * Parse @position-try.
+   */
+  function atPositionTry(): CssPositionTryAST | undefined {
+    const pos = position();
+    const m = /^@position-try\s+(--[-\w]+)\s*/.exec(css);
+    if (!m) {
+      return;
+    }
+    const name = processMatch(m)[1];
+
+    if (!open()) {
+      return error("@position-try missing '{'");
+    }
+    let decls = comments<CssDeclarationAST>();
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
+      decls.push(decl);
+      decls = decls.concat(comments());
+      decl = declaration();
+    }
+    if (!close()) {
+      return error("@position-try missing '}'");
+    }
+
+    return pos<CssPositionTryAST>({
+      type: CssTypes.positionTry,
+      name: name,
       declarations: decls,
     });
   }
@@ -913,9 +1114,15 @@ export const parse = (
       atPage() ||
       atHost() ||
       atFontFace() ||
+      atFontFeatureValues() ||
       atContainer() ||
       atStartingStyle() ||
       atLayer() ||
+      atProperty() ||
+      atCounterStyle() ||
+      atScope() ||
+      atViewTransition() ||
+      atPositionTry() ||
       atGeneric()
     );
   }

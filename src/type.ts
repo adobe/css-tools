@@ -9,9 +9,11 @@ export enum CssTypes {
   atRule = 'at-rule',
   container = 'container',
   charset = 'charset',
+  counterStyle = 'counter-style',
   document = 'document',
   customMedia = 'custom-media',
   fontFace = 'font-face',
+  fontFeatureValues = 'font-feature-values',
   host = 'host',
   import = 'import',
   keyframes = 'keyframes',
@@ -20,8 +22,12 @@ export enum CssTypes {
   media = 'media',
   namespace = 'namespace',
   page = 'page',
+  positionTry = 'position-try',
+  property = 'property',
+  scope = 'scope',
   startingStyle = 'starting-style',
   supports = 'supports',
+  viewTransition = 'view-transition',
 }
 
 export type CssCommonAST = {
@@ -119,7 +125,7 @@ export type CssNamespaceAST = CssCommonPositionAST & {
 export type CssPageAST = CssCommonPositionAST & {
   type: CssTypes.page;
   selectors: Array<string>;
-  declarations: Array<CssDeclarationAST | CssCommentAST>;
+  declarations: Array<CssDeclarationAST | CssCommentAST | CssAtRuleAST>;
 };
 export type CssSupportsAST = CssCommonPositionAST & {
   type: CssTypes.supports;
@@ -132,6 +138,35 @@ export type CssStartingStyleAST = CssCommonPositionAST & {
   rules: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 
+export type CssCounterStyleAST = CssCommonPositionAST & {
+  type: CssTypes.counterStyle;
+  name: string;
+  declarations: Array<CssDeclarationAST | CssCommentAST>;
+};
+export type CssFontFeatureValuesAST = CssCommonPositionAST & {
+  type: CssTypes.fontFeatureValues;
+  fontFamily: string;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
+};
+export type CssPositionTryAST = CssCommonPositionAST & {
+  type: CssTypes.positionTry;
+  name: string;
+  declarations: Array<CssDeclarationAST | CssCommentAST>;
+};
+export type CssPropertyAST = CssCommonPositionAST & {
+  type: CssTypes.property;
+  name: string;
+  declarations: Array<CssDeclarationAST | CssCommentAST>;
+};
+export type CssScopeAST = CssCommonPositionAST & {
+  type: CssTypes.scope;
+  scope: string;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
+};
+export type CssViewTransitionAST = CssCommonPositionAST & {
+  type: CssTypes.viewTransition;
+  declarations: Array<CssDeclarationAST | CssCommentAST>;
+};
 export type CssGenericAtRuleAST = CssCommonPositionAST & {
   type: CssTypes.atRule;
   name: string;
@@ -144,9 +179,11 @@ export type CssAtRuleAST =
   | CssCommentAST
   | CssContainerAST
   | CssCharsetAST
+  | CssCounterStyleAST
   | CssCustomMediaAST
   | CssDocumentAST
   | CssFontFaceAST
+  | CssFontFeatureValuesAST
   | CssHostAST
   | CssImportAST
   | CssKeyframesAST
@@ -154,8 +191,12 @@ export type CssAtRuleAST =
   | CssMediaAST
   | CssNamespaceAST
   | CssPageAST
+  | CssPositionTryAST
+  | CssPropertyAST
+  | CssScopeAST
   | CssSupportsAST
   | CssStartingStyleAST
+  | CssViewTransitionAST
   | CssGenericAtRuleAST;
 
 export type CssAllNodesAST =

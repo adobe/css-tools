@@ -1,0 +1,24 @@
+@page {
+  margin: 2cm;
+
+  @top-center {
+    content: "Page Title";
+  }
+
+  @bottom-right {
+    content: counter(page);
+  }
+
+  @left-middle {
+    content: "Side";
+    font-size: 10pt;
+  }
+}
+
+@page :first {
+  margin-top: 4cm;
+
+  @top-left {
+    content: none;
+  }
+}
