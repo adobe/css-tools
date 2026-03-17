@@ -1,0 +1,36 @@
+@property --my-color {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: red;
+}
+
+@counter-style thumbs {
+  system: cyclic;
+  symbols: "\1F44D";
+  suffix: " ";
+}
+
+@font-feature-values Font One {
+  @styleset {
+    nice-style: 12;
+  }
+}
+
+@scope (.card) to (.card-body) {
+  :scope {
+    padding: 1rem;
+  }
+
+  .title {
+    font-size: 1.2em;
+  }
+}
+
+@view-transition {
+  navigation: auto;
+}
+
+@position-try --my-fallback {
+  top: anchor(bottom);
+  left: anchor(left);
+}
