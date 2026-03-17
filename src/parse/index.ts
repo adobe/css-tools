@@ -228,14 +228,16 @@ export const parse = (
    * Parse selector.
    */
   function selector() {
-    const m = /^([^{]+)/.exec(css);
-    if (!m) {
+    const bracePos = indexOfArrayWithBracketAndQuoteSupport(css, ['{']);
+    if (bracePos === -1 || bracePos === 0) {
       return;
     }
-    processMatch(m);
+    const selectorStr = css.substring(0, bracePos);
+    const fakeMatch = [selectorStr] as unknown as RegExpExecArray;
+    processMatch(fakeMatch);
 
     // remove comment in selector;
-    const res = trim(m[0]).replace(commentRegex, '');
+    const res = trim(selectorStr).replace(commentRegex, '');
 
     return splitWithBracketAndQuoteSupport(res, [',']).map((v) => trim(v));
   }

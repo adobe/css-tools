@@ -1,0 +1,94 @@
+.widget-wrapper {
+  container-type: inline-size;
+  container-name: widget;
+}
+
+@container widget (min-width: 300px) {
+  .widget {
+    display: flex;
+    gap: 1rem;
+  }
+}
+
+@container widget (min-width: 500px) {
+  .widget {
+    flex-direction: row;
+    .widget-image {
+      width: 200px;
+    }
+    .widget-content {
+      flex: 1;
+      h2 {
+        font-size: 1.5rem;
+      }
+      p {
+        line-height: 1.6;
+      }
+    }
+  }
+}
+
+@container widget (min-width: 700px) and (min-height: 400px) {
+  .widget {
+    padding: 2rem;
+    .widget-image {
+      width: 300px;
+      aspect-ratio: 16 / 9;
+    }
+  }
+}
+
+.responsive-grid {
+  container-type: inline-size;
+  container-name: grid-container;
+  display: grid;
+  gap: 1rem;
+  .grid-item {
+    padding: 1rem;
+    border: 1px solid #ccc;
+    @container grid-container (min-width: 400px) {
+      padding: 1.5rem;
+    }
+    @container grid-container (min-width: 800px) {
+      padding: 2rem;
+
+      .item-title {
+        font-size: 1.3rem;
+      }
+    }
+  }
+}
+
+@container (min-width: 0) {
+  .always-flex {
+    display: flex;
+  }
+}
+
+@container style(--theme: dark) {
+  .themed {
+    background: #222;
+    color: #eee;
+  }
+}
+
+@container widget (width > 500px) {
+  .modern-syntax {
+    font-size: 1.2rem;
+  }
+}
+
+.multi-container {
+  container: sidebar / inline-size;
+}
+
+@container sidebar (min-width: 200px) {
+  .sidebar-content {
+    display: block;
+    @container sidebar (min-width: 400px) {
+      display: grid;
+
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+}
