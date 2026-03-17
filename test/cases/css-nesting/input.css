@@ -1,0 +1,57 @@
+.parent {
+  color: red;
+
+  .child {
+    color: blue;
+  }
+
+  &:hover {
+    color: green;
+  }
+
+  & .descendant {
+    font-size: 14px;
+  }
+
+  > .direct {
+    margin: 0;
+  }
+
+  + .sibling {
+    padding: 10px;
+  }
+
+  .deeply-nested {
+    font-weight: bold;
+
+    .even-deeper {
+      font-style: italic;
+    }
+  }
+
+  @media (min-width: 768px) {
+    font-size: 18px;
+  }
+}
+
+.special-chars {
+  content: "semicolon ; and brace }";
+  background: url('image;file}.png');
+  --custom: calc(100% - 20px);
+}
+
+article {
+  color: black;
+
+  h1 {
+    font-size: 2em;
+  }
+
+  p {
+    line-height: 1.5;
+
+    a {
+      text-decoration: none;
+    }
+  }
+}

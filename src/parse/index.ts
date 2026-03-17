@@ -10,6 +10,7 @@ import {
   type CssDeclarationAST,
   type CssDocumentAST,
   type CssFontFaceAST,
+  type CssGenericAtRuleAST,
   type CssHostAST,
   type CssImportAST,
   type CssKeyframeAST,
@@ -283,7 +284,8 @@ export const parse = (
   }
 
   /**
-   * Parse declarations.
+   * Parse declarations (without nesting support).
+   * Used by @font-face, @page, keyframes.
    */
   function declarations() {
     const decls: Array<CssDeclarationAST | CssCommentAST> = [];
@@ -305,6 +307,126 @@ export const parse = (
       return error("missing '}'");
     }
     return decls;
+  }
+
+  /**
+   * Check if the current position looks like a nested rule
+   * ('{' appears before ';' and '}' at the top level).
+   */
+  function looksLikeNestedRule(): boolean {
+    const bracePos = indexOfArrayWithBracketAndQuoteSupport(css, ['{']);
+    if (bracePos === -1) {
+      return false;
+    }
+    const semiPos = indexOfArrayWithBracketAndQuoteSupport(css, [';']);
+    const closePos = indexOfArrayWithBracketAndQuoteSupport(css, ['}']);
+
+    if (semiPos !== -1 && semiPos < bracePos) {
+      return false;
+    }
+    if (closePos !== -1 && closePos < bracePos) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Parse rule body with CSS nesting support.
+   * Handles declarations, comments, nested rules, and nested at-rules.
+   */
+  function ruleBody():
+    | Array<CssDeclarationAST | CssCommentAST | CssAtRuleAST>
+    | undefined {
+    const items: Array<CssDeclarationAST | CssCommentAST | CssAtRuleAST> = [];
+
+    if (!open()) {
+      return error("missing '{'");
+    }
+    comments(items);
+
+    while (css.length && css.charAt(0) !== '}') {
+      // nested at-rule
+      if (css.charAt(0) === '@') {
+        const ar = atRule();
+        if (ar) {
+          items.push(ar);
+          comments(items);
+          continue;
+        }
+      }
+
+      // nested rule ('{' comes before ';' and '}')
+      if (looksLikeNestedRule()) {
+        const nestedR = rule();
+        if (nestedR) {
+          items.push(nestedR);
+          comments(items);
+          continue;
+        }
+      }
+
+      // declaration
+      const decl = declaration();
+      if (decl) {
+        items.push(decl);
+        comments(items);
+        continue;
+      }
+
+      // nothing matched
+      break;
+    }
+
+    if (!close()) {
+      return error("missing '}'");
+    }
+    return items;
+  }
+
+  /**
+   * Parse rules, declarations, and nested rules.
+   * Used by block at-rules (media, supports, etc.) to support
+   * both top-level rules and declarations when nested inside a rule.
+   */
+  function rulesOrDeclarations() {
+    const items: Array<
+      CssAtRuleAST | CssDeclarationAST | CssCommentAST
+    > = [];
+    whitespace();
+    comments(items);
+    while (css.length && css.charAt(0) !== '}') {
+      // at-rule
+      if (css.charAt(0) === '@') {
+        const ar = atRule();
+        if (ar) {
+          items.push(ar);
+          comments(items);
+          continue;
+        }
+      }
+
+      // nested rule ('{' comes before ';' and '}')
+      if (looksLikeNestedRule()) {
+        const r = rule();
+        if (r) {
+          items.push(r);
+          comments(items);
+          continue;
+        }
+      }
+
+      // declaration
+      const decl = declaration();
+      if (decl) {
+        items.push(decl);
+        comments(items);
+        continue;
+      }
+
+      // nothing matched
+      break;
+    }
+    return items;
   }
 
   /**
@@ -397,7 +519,7 @@ export const parse = (
       return error("@supports missing '{'");
     }
 
-    const style = comments<CssAtRuleAST>().concat(rules());
+    const style = rulesOrDeclarations();
 
     if (!close()) {
       return error("@supports missing '}'");
@@ -426,7 +548,7 @@ export const parse = (
       return error("@host missing '{'");
     }
 
-    const style = comments<CssAtRuleAST>().concat(rules());
+    const style = rulesOrDeclarations();
 
     if (!close()) {
       return error("@host missing '}'");
@@ -454,7 +576,7 @@ export const parse = (
       return error("@container missing '{'");
     }
 
-    const style = comments<CssAtRuleAST>().concat(rules());
+    const style = rulesOrDeclarations();
 
     if (!close()) {
       return error("@container missing '}'");
@@ -490,7 +612,7 @@ export const parse = (
       });
     }
 
-    const style = comments<CssAtRuleAST>().concat(rules());
+    const style = rulesOrDeclarations();
 
     if (!close()) {
       return error("@layer missing '}'");
@@ -519,7 +641,7 @@ export const parse = (
       return error("@media missing '{'");
     }
 
-    const style = comments<CssAtRuleAST>().concat(rules());
+    const style = rulesOrDeclarations();
 
     if (!close()) {
       return error("@media missing '}'");
@@ -605,7 +727,7 @@ export const parse = (
       return error("@document missing '{'");
     }
 
-    const style = comments<CssAtRuleAST>().concat(rules());
+    const style = rulesOrDeclarations();
 
     if (!close()) {
       return error("@document missing '}'");
@@ -667,7 +789,7 @@ export const parse = (
     if (!open()) {
       return error("@starting-style missing '{'");
     }
-    const style = comments<CssAtRuleAST>().concat(rules());
+    const style = rulesOrDeclarations();
 
     if (!close()) {
       return error("@starting-style missing '}'");
@@ -722,6 +844,56 @@ export const parse = (
   }
 
   /**
+   * Parse generic/unknown at-rule (fallback for any unrecognized at-rule).
+   * Handles both block at-rules (@scope { ... }) and statement at-rules (@foo ...;).
+   */
+  function atGeneric(): CssGenericAtRuleAST | undefined {
+    const pos = position();
+    const m = /^@([-\w]+)\s*/.exec(css);
+    if (!m) {
+      return;
+    }
+    const name = processMatch(m)[1];
+
+    // Capture prelude (everything between the name and '{' or ';')
+    let prelude = '';
+    const preludeEnd = indexOfArrayWithBracketAndQuoteSupport(css, ['{', ';']);
+    if (preludeEnd !== -1 && preludeEnd > 0) {
+      prelude = trim(css.substring(0, preludeEnd));
+      const fakeMatch = [css.substring(0, preludeEnd)] as unknown as RegExpExecArray;
+      processMatch(fakeMatch);
+    }
+
+    // Block at-rule
+    if (open()) {
+      const style = rulesOrDeclarations();
+
+      if (!close()) {
+        return error(`@${name} missing '}'`);
+      }
+
+      return pos<CssGenericAtRuleAST>({
+        type: CssTypes.atRule,
+        name: name,
+        prelude: prelude,
+        rules: style,
+      });
+    }
+
+    // Statement at-rule (ends with ';')
+    const endMatch = /^[;\s]*/.exec(css);
+    if (endMatch) {
+      processMatch(endMatch);
+    }
+
+    return pos<CssGenericAtRuleAST>({
+      type: CssTypes.atRule,
+      name: name,
+      prelude: prelude,
+    });
+  }
+
+  /**
    * Parse at rule.
    */
   function atRule(): CssAtRuleAST | undefined {
@@ -743,7 +915,8 @@ export const parse = (
       atFontFace() ||
       atContainer() ||
       atStartingStyle() ||
-      atLayer()
+      atLayer() ||
+      atGeneric()
     );
   }
 
@@ -762,7 +935,7 @@ export const parse = (
     return pos<CssRuleAST>({
       type: CssTypes.rule,
       selectors: sel,
-      declarations: declarations() || [],
+      declarations: ruleBody() || [],
     });
   }
 

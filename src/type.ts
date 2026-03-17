@@ -6,6 +6,7 @@ export enum CssTypes {
   rule = 'rule',
   declaration = 'declaration',
   comment = 'comment',
+  atRule = 'at-rule',
   container = 'container',
   charset = 'charset',
   document = 'document',
@@ -44,7 +45,7 @@ export type CssStylesheetAST = CssCommonAST & {
 export type CssRuleAST = CssCommonPositionAST & {
   type: CssTypes.rule;
   selectors: Array<string>;
-  declarations: Array<CssDeclarationAST | CssCommentAST>;
+  declarations: Array<CssDeclarationAST | CssCommentAST | CssAtRuleAST>;
 };
 
 export type CssDeclarationAST = CssCommonPositionAST & {
@@ -60,7 +61,7 @@ export type CssCommentAST = CssCommonPositionAST & {
 export type CssContainerAST = CssCommonPositionAST & {
   type: CssTypes.container;
   container: string;
-  rules: Array<CssAtRuleAST>;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 
 export type CssCharsetAST = CssCommonPositionAST & {
@@ -76,7 +77,7 @@ export type CssDocumentAST = CssCommonPositionAST & {
   type: CssTypes.document;
   document: string;
   vendor?: string;
-  rules: Array<CssAtRuleAST>;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 export type CssFontFaceAST = CssCommonPositionAST & {
   type: CssTypes.fontFace;
@@ -84,7 +85,7 @@ export type CssFontFaceAST = CssCommonPositionAST & {
 };
 export type CssHostAST = CssCommonPositionAST & {
   type: CssTypes.host;
-  rules: Array<CssAtRuleAST>;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 export type CssImportAST = CssCommonPositionAST & {
   type: CssTypes.import;
@@ -104,12 +105,12 @@ export type CssKeyframeAST = CssCommonPositionAST & {
 export type CssLayerAST = CssCommonPositionAST & {
   type: CssTypes.layer;
   layer: string;
-  rules?: Array<CssAtRuleAST>;
+  rules?: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 export type CssMediaAST = CssCommonPositionAST & {
   type: CssTypes.media;
   media: string;
-  rules: Array<CssAtRuleAST>;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 export type CssNamespaceAST = CssCommonPositionAST & {
   type: CssTypes.namespace;
@@ -123,12 +124,19 @@ export type CssPageAST = CssCommonPositionAST & {
 export type CssSupportsAST = CssCommonPositionAST & {
   type: CssTypes.supports;
   supports: string;
-  rules: Array<CssAtRuleAST>;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 
 export type CssStartingStyleAST = CssCommonPositionAST & {
   type: CssTypes.startingStyle;
-  rules: Array<CssAtRuleAST>;
+  rules: Array<CssAtRuleAST | CssDeclarationAST>;
+};
+
+export type CssGenericAtRuleAST = CssCommonPositionAST & {
+  type: CssTypes.atRule;
+  name: string;
+  prelude: string;
+  rules?: Array<CssAtRuleAST | CssDeclarationAST>;
 };
 
 export type CssAtRuleAST =
@@ -147,7 +155,8 @@ export type CssAtRuleAST =
   | CssNamespaceAST
   | CssPageAST
   | CssSupportsAST
-  | CssStartingStyleAST;
+  | CssStartingStyleAST
+  | CssGenericAtRuleAST;
 
 export type CssAllNodesAST =
   | CssAtRuleAST

@@ -8,6 +8,7 @@ import {
   type CssDeclarationAST,
   type CssDocumentAST,
   type CssFontFaceAST,
+  type CssGenericAtRuleAST,
   type CssHostAST,
   type CssImportAST,
   type CssKeyframeAST,
@@ -102,6 +103,8 @@ class Compiler {
         return this.startingStyle(node);
       case CssTypes.supports:
         return this.supports(node);
+      case CssTypes.atRule:
+        return this.genericAtRule(node);
     }
   }
 
@@ -411,6 +414,43 @@ class Compiler {
     return this.emit(
       `@custom-media ${node.name} ${node.media};`,
       node.position,
+    );
+  }
+
+  /**
+   * Visit generic at-rule node (fallback for any unrecognized at-rule).
+   */
+  genericAtRule(node: CssGenericAtRuleAST) {
+    const prelude = node.prelude ? ` ${node.prelude}` : '';
+    if (this.compress) {
+      return (
+        this.emit(`@${node.name}${prelude}`, node.position) +
+        (node.rules
+          ? this.emit('{') +
+            this.mapVisit(<CssAllNodesAST[]>node.rules) +
+            this.emit('}')
+          : ';')
+      );
+    }
+    if (!node.rules) {
+      return this.emit(
+        `${this.indent()}@${node.name}${prelude};`,
+        node.position,
+      );
+    }
+    const hasNestedRules = node.rules.some(
+      (r) =>
+        r.type !== CssTypes.declaration && r.type !== CssTypes.comment,
+    );
+    const delim = hasNestedRules ? '\n\n' : '\n';
+    return (
+      this.emit(`${this.indent()}@${node.name}${prelude}`, node.position) +
+      this.emit(hasNestedRules ? ` {\n${this.indent(1)}` : ' {\n') +
+      this.emit(hasNestedRules ? '' : this.indent(1)) +
+      this.mapVisit(<CssAllNodesAST[]>node.rules, delim) +
+      this.emit(hasNestedRules
+        ? `\n${this.indent(-1)}${this.indent()}}`
+        : `${this.indent(-1)}\n${this.indent()}}`)
     );
   }
 
