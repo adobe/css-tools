@@ -19,6 +19,7 @@ import {
   type CssMediaAST,
   type CssNamespaceAST,
   type CssPageAST,
+  type CssPageMarginBoxAST,
   type CssPositionTryAST,
   type CssPropertyAST,
   type CssRuleAST,
@@ -109,6 +110,8 @@ class Compiler {
         return this.namespace(node);
       case CssTypes.page:
         return this.page(node);
+      case CssTypes.pageMarginBox:
+        return this.pageMarginBox(node);
       case CssTypes.positionTry:
         return this.positionTry(node);
       case CssTypes.property:
@@ -380,6 +383,28 @@ class Compiler {
       this.mapVisit(node.declarations, '\n') +
       this.emit(this.indent(-1)) +
       this.emit('\n}')
+    );
+  }
+
+  /**
+   * Visit @page margin box node (@top-left, @bottom-right, etc.).
+   */
+  pageMarginBox(node: CssPageMarginBoxAST) {
+    if (this.compress) {
+      return (
+        this.emit(`@${node.name}`, node.position) +
+        this.emit('{') +
+        this.mapVisit(node.declarations) +
+        this.emit('}')
+      );
+    }
+    return (
+      this.emit(`${this.indent()}@${node.name} `, node.position) +
+      this.emit('{\n') +
+      this.emit(this.indent(1)) +
+      this.mapVisit(node.declarations, '\n') +
+      this.emit(this.indent(-1)) +
+      this.emit(`\n${this.indent()}}`)
     );
   }
 

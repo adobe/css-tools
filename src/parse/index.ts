@@ -21,6 +21,7 @@ import {
   type CssMediaAST,
   type CssNamespaceAST,
   type CssPageAST,
+  type CssPageMarginBoxAST,
   type CssPositionTryAST,
   type CssPropertyAST,
   type CssRuleAST,
@@ -679,6 +680,60 @@ export const parse = (
   }
 
   /**
+   * Parse @page margin box at-rules (@top-left, @bottom-right, @left-middle, etc.).
+   */
+  const pageMarginBoxNames = [
+    'top-left-corner',
+    'top-left',
+    'top-center',
+    'top-right',
+    'top-right-corner',
+    'bottom-left-corner',
+    'bottom-left',
+    'bottom-center',
+    'bottom-right',
+    'bottom-right-corner',
+    'left-top',
+    'left-middle',
+    'left-bottom',
+    'right-top',
+    'right-middle',
+    'right-bottom',
+  ];
+  const pageMarginBoxRegex = new RegExp(
+    '^@(' + pageMarginBoxNames.join('|') + ')(?![\\w-])\\s*',
+  );
+
+  function atPageMarginBox(): CssPageMarginBoxAST | undefined {
+    const pos = position();
+    const m = pageMarginBoxRegex.exec(css);
+    if (!m) {
+      return;
+    }
+    const name = processMatch(m)[1];
+
+    if (!open()) {
+      return error(`@${name} missing '{'`);
+    }
+    let decls = comments<CssDeclarationAST>();
+    let decl: CssDeclarationAST | undefined = declaration();
+    while (decl) {
+      decls.push(decl);
+      decls = decls.concat(comments());
+      decl = declaration();
+    }
+    if (!close()) {
+      return error(`@${name} missing '}'`);
+    }
+
+    return pos<CssPageMarginBoxAST>({
+      type: CssTypes.pageMarginBox,
+      name: name,
+      declarations: decls,
+    });
+  }
+
+  /**
    * Parse paged media.
    */
   function atPage(): CssPageAST | undefined {
@@ -1123,6 +1178,7 @@ export const parse = (
       atScope() ||
       atViewTransition() ||
       atPositionTry() ||
+      atPageMarginBox() ||
       atGeneric()
     );
   }

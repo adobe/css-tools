@@ -22,6 +22,7 @@ export enum CssTypes {
   media = 'media',
   namespace = 'namespace',
   page = 'page',
+  pageMarginBox = 'page-margin-box',
   positionTry = 'position-try',
   property = 'property',
   scope = 'scope',
@@ -167,6 +168,11 @@ export type CssViewTransitionAST = CssCommonPositionAST & {
   type: CssTypes.viewTransition;
   declarations: Array<CssDeclarationAST | CssCommentAST>;
 };
+export type CssPageMarginBoxAST = CssCommonPositionAST & {
+  type: CssTypes.pageMarginBox;
+  name: string;
+  declarations: Array<CssDeclarationAST | CssCommentAST>;
+};
 export type CssGenericAtRuleAST = CssCommonPositionAST & {
   type: CssTypes.atRule;
   name: string;
@@ -191,6 +197,7 @@ export type CssAtRuleAST =
   | CssMediaAST
   | CssNamespaceAST
   | CssPageAST
+  | CssPageMarginBoxAST
   | CssPositionTryAST
   | CssPropertyAST
   | CssScopeAST
