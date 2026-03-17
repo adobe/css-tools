@@ -27,8 +27,8 @@ import {
   type CssStartingStyleAST,
   type CssStylesheetAST,
   type CssSupportsAST,
-  type CssViewTransitionAST,
   CssTypes,
+  type CssViewTransitionAST,
 } from '../type';
 
 export type CompilerOptions = {
@@ -510,10 +510,7 @@ class Compiler {
   fontFeatureValues(node: CssFontFeatureValuesAST) {
     if (this.compress) {
       return (
-        this.emit(
-          `@font-feature-values ${node.fontFamily}`,
-          node.position,
-        ) +
+        this.emit(`@font-feature-values ${node.fontFamily}`, node.position) +
         this.emit('{') +
         this.mapVisit(node.rules) +
         this.emit('}')
@@ -617,8 +614,7 @@ class Compiler {
       );
     }
     const hasNestedRules = node.rules.some(
-      (r) =>
-        r.type !== CssTypes.declaration && r.type !== CssTypes.comment,
+      (r) => r.type !== CssTypes.declaration && r.type !== CssTypes.comment,
     );
     const delim = hasNestedRules ? '\n\n' : '\n';
     return (
@@ -626,9 +622,11 @@ class Compiler {
       this.emit(hasNestedRules ? ` {\n${this.indent(1)}` : ' {\n') +
       this.emit(hasNestedRules ? '' : this.indent(1)) +
       this.mapVisit(<CssAllNodesAST[]>node.rules, delim) +
-      this.emit(hasNestedRules
-        ? `\n${this.indent(-1)}${this.indent()}}`
-        : `${this.indent(-1)}\n${this.indent()}}`)
+      this.emit(
+        hasNestedRules
+          ? `\n${this.indent(-1)}${this.indent()}}`
+          : `${this.indent(-1)}\n${this.indent()}}`,
+      )
     );
   }
 

@@ -29,8 +29,8 @@ import {
   type CssStartingStyleAST,
   type CssStylesheetAST,
   type CssSupportsAST,
-  type CssViewTransitionAST,
   CssTypes,
+  type CssViewTransitionAST,
 } from '../type';
 import {
   indexOfArrayWithBracketAndQuoteSupport,
@@ -156,12 +156,32 @@ export const parse = (
     const rules: Array<CssRuleAST | CssAtRuleAST> = [];
     whitespace();
     comments(rules);
-    while (css.length && css.charAt(0) !== '}') {
+    while (css.length) {
+      if (css.charAt(0) === '}') {
+        if (options?.silent) {
+          // Skip stray closing braces at top level
+          error("extra '}'");
+          const fakeMatch = ['}'] as unknown as RegExpExecArray;
+          processMatch(fakeMatch);
+          whitespace();
+          comments(rules);
+          continue;
+        }
+        break;
+      }
       node = atRule() || rule();
       if (node) {
         rules.push(node);
         comments(rules);
       } else {
+        if (options?.silent) {
+          // Skip unrecognized character to recover
+          const fakeMatch = [css.charAt(0)] as unknown as RegExpExecArray;
+          processMatch(fakeMatch);
+          whitespace();
+          comments(rules);
+          continue;
+        }
         break;
       }
     }
@@ -311,6 +331,27 @@ export const parse = (
       comments(decls);
       decl = declaration();
     }
+    // In silent mode, try to recover from errors by skipping to next semicolon
+    while (options?.silent && css.length && css.charAt(0) !== '}') {
+      const semiPos = css.indexOf(';');
+      const bracePos = css.indexOf('}');
+      if (semiPos !== -1 && (bracePos === -1 || semiPos < bracePos)) {
+        const fakeMatch = [
+          css.substring(0, semiPos + 1),
+        ] as unknown as RegExpExecArray;
+        processMatch(fakeMatch);
+        whitespace();
+        comments(decls);
+        decl = declaration();
+        while (decl) {
+          decls.push(decl);
+          comments(decls);
+          decl = declaration();
+        }
+      } else {
+        break;
+      }
+    }
 
     if (!close()) {
       return error("missing '}'");
@@ -382,7 +423,20 @@ export const parse = (
         continue;
       }
 
-      // nothing matched
+      // nothing matched — skip to next semicolon or closing brace to recover
+      if (options?.silent) {
+        const semiPos = css.indexOf(';');
+        const bracePos = css.indexOf('}');
+        if (semiPos !== -1 && (bracePos === -1 || semiPos < bracePos)) {
+          const fakeMatch = [
+            css.substring(0, semiPos + 1),
+          ] as unknown as RegExpExecArray;
+          processMatch(fakeMatch);
+          whitespace();
+          comments(items);
+          continue;
+        }
+      }
       break;
     }
 
@@ -398,9 +452,7 @@ export const parse = (
    * both top-level rules and declarations when nested inside a rule.
    */
   function rulesOrDeclarations() {
-    const items: Array<
-      CssAtRuleAST | CssDeclarationAST | CssCommentAST
-    > = [];
+    const items: Array<CssAtRuleAST | CssDeclarationAST | CssCommentAST> = [];
     whitespace();
     comments(items);
     while (css.length && css.charAt(0) !== '}') {
@@ -432,7 +484,20 @@ export const parse = (
         continue;
       }
 
-      // nothing matched
+      // nothing matched — skip to next semicolon or closing brace to recover
+      if (options?.silent) {
+        const semiPos = css.indexOf(';');
+        const bracePos = css.indexOf('}');
+        if (semiPos !== -1 && (bracePos === -1 || semiPos < bracePos)) {
+          const fakeMatch = [
+            css.substring(0, semiPos + 1),
+          ] as unknown as RegExpExecArray;
+          processMatch(fakeMatch);
+          whitespace();
+          comments(items);
+          continue;
+        }
+      }
       break;
     }
     return items;
@@ -703,7 +768,7 @@ export const parse = (
     'right-bottom',
   ];
   const pageMarginBoxRegex = new RegExp(
-    '^@(' + pageMarginBoxNames.join('|') + ')(?![\\w-])\\s*',
+    `^@(${pageMarginBoxNames.join('|')})(?![\\w-])\\s*`,
   );
 
   function atPageMarginBox(): CssPageMarginBoxAST | undefined {
@@ -1118,7 +1183,9 @@ export const parse = (
     const preludeEnd = indexOfArrayWithBracketAndQuoteSupport(css, ['{', ';']);
     if (preludeEnd !== -1 && preludeEnd > 0) {
       prelude = trim(css.substring(0, preludeEnd));
-      const fakeMatch = [css.substring(0, preludeEnd)] as unknown as RegExpExecArray;
+      const fakeMatch = [
+        css.substring(0, preludeEnd),
+      ] as unknown as RegExpExecArray;
       processMatch(fakeMatch);
     }
 
