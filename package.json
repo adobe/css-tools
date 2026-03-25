@@ -41,7 +41,7 @@
     "rollup-plugin-dts": "^6.2.1",
     "ts-jest": "^29.1.1",
     "tslib": "^2.8.1",
-    "typescript": "^5.7.3"
+    "typescript": "^6.0.2"
   },
   "scripts": {
     "benchmark": "npm run build && node benchmark/index.mjs",
