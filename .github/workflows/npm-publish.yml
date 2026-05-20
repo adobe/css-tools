@@ -1,8 +1,9 @@
 name: npm-publish
 on:
+  workflow_dispatch:
   push:
     branches:
-      - "main" # Change this if not your default branch
+      - "main"
     paths:
       - 'package.json'
 jobs:
