@@ -19,7 +19,9 @@ jobs:
       - name: install
         run: npm install
       - run: npm run test
+      - name: Authenticate with npm
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.ADOBE_BOT_NPM_TOKEN }}" > .npmrc
+          git update-index --skip-worktree .npmrc
       - name: Publish to npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.ADOBE_BOT_NPM_TOKEN }}
