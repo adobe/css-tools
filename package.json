@@ -1,6 +1,6 @@
 {
   "name": "@adobe/css-tools",
-  "version": "4.4.4",
+  "version": "4.5.0",
   "description": "A modern CSS parser and stringifier with TypeScript support",
   "source": "src/index.ts",
   "main": "./dist/cjs/adobe-css-tools.cjs",
