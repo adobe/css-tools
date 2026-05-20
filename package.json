@@ -78,5 +78,9 @@
     "minify",
     "format",
     "preprocessor"
-  ]
+  ],
+  "dependencies": {
+    "postcss": "^8.5.15",
+    "postcss-safe-parser": "^7.0.1"
+  }
 }
