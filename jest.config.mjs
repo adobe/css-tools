@@ -2,7 +2,7 @@ import { createDefaultEsmPreset } from 'ts-jest';
 
 const ignores = ['/node_modules/', '__mocks__', '/dist/'];
 const tsJestTransformCfg = createDefaultEsmPreset({
-  tsconfig: { moduleResolution: 'bundler' },
+  tsconfig: { moduleResolution: 'bundler', ignoreDeprecations: '6.0' },
 });
 
 /** @type {import("jest").Config} **/
