@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.0] - 2026-05-20
+
+### Added
+- Add support for CSS Nesting — rules nested inside other rules (#621 by @jogibear9988)
+- Add support for `@container` container queries with nested rule body
+- Add support for Page Margin Boxes (`@top-left`, `@bottom-right`, `@left-middle`, etc.) inside `@page`
+- Add generic at-rule fallback — unknown `@foo { ... }` and `@foo ...;` rules are preserved as `CssGenericAtRuleAST` instead of being dropped
+- Add support for `@counter-style`, `@font-feature-values`, `@scope`, `@view-transition`, `@position-try`
+- Export new TypeScript types: `CssGenericAtRuleAST`, `CssPageMarginBoxAST`, `CssPositionTryAST`, `CssScopeAST`, `CssViewTransitionAST`, `CssCounterStyleAST`, `CssFontFeatureValuesAST`
+
+### Fixed
+- Fix selector parsing for complex nested selectors including `:is()`, `:has()`, `:not()`
+- Fix `@page` to correctly accept margin-box at-rule children
+- Fix bracket- and quote-aware position tracking for pseudo-functions
+
+### Changed
+- Upgrade to TypeScript 6.0.2
+- Upgrade to `@rollup/plugin-terser` 1.0.0
+- Drop Node 18 from CI (EOL April 2025) — minimum supported runtime is now Node 20
+
+### Security
+- Update lodash to 4.18.1
+- Update minimatch to 3.1.5
+- Update picomatch to 4.0.4
+
 ## [4.4.4] - 2025-07-22
 
 ### Changed
