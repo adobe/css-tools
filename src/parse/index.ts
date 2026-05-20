@@ -139,7 +139,8 @@ function collectSilentErrors(css: string, sourceName: string): CssParseError[] {
   return errors;
 }
 
-// PostCSS end is inclusive (last char); css-tools end is exclusive (past last char).
+// PostCSS end is inclusive (last char); v4 css-tools end is exclusive (past last char).
+// Use for rules, at-rules, and comments where end = last char + 1.
 function convertPos(
   source: postcss.Source | undefined,
   sourceName: string,
@@ -148,6 +149,36 @@ function convertPos(
   return new Position(
     { line: source.start.line, column: source.start.column },
     { line: source.end.line, column: source.end.column + 1 },
+    sourceName,
+  );
+}
+
+// Declarations use different end semantics:
+// - With semicolon: end = position of ';' (PostCSS end, no +1)
+// - Without semicolon: end = position of closing '}' (parent's end, no +1)
+function convertDeclPos(
+  node: postcss.Declaration,
+  sourceName: string,
+): Position | undefined {
+  if (!node.source) return undefined;
+  const parent = node.parent as postcss.Container & {
+    raws?: { semicolon?: boolean };
+  };
+  const isLastChild = parent?.nodes?.[parent.nodes.length - 1] === node;
+  const noSemicolon = isLastChild && parent?.raws?.semicolon === false;
+
+  const endLine =
+    noSemicolon && parent.source
+      ? parent.source.end.line
+      : node.source.end.line;
+  const endCol =
+    noSemicolon && parent.source
+      ? parent.source.end.column
+      : node.source.end.column;
+
+  return new Position(
+    { line: node.source.start.line, column: node.source.start.column },
+    { line: endLine, column: endCol },
     sourceName,
   );
 }
@@ -187,7 +218,7 @@ function convertDeclaration(
     type: CssTypes.declaration,
     property: starPrefix + node.prop,
     value: node.value + important,
-    position: convertPos(node.source, sourceName),
+    position: convertDeclPos(node, sourceName),
   };
 }
 
@@ -413,7 +444,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
         return {
           type: CssTypes.layer,
           layer: params,
-          position: convertPos(node.source, sourceName),
+          position: layerStatementPos(node, sourceName),
         } as CssLayerAST;
       }
       return {
@@ -500,7 +531,8 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
   // Document with optional vendor prefix (@-moz-document, @document)
   if (/^([-\w]+)?document$/.test(nameLower)) {
     const vendorMatch = /^([-\w]+)?document$/.exec(nameLower);
-    const vendor = vendorMatch?.[1] || undefined;
+    // v4 used "" (empty string) when no vendor prefix, not undefined
+    const vendor = vendorMatch?.[1] ?? '';
     return {
       type: CssTypes.document,
       document: params,
@@ -581,6 +613,30 @@ function addParent<T extends { type?: string }>(obj: T, parent?: unknown): T {
   }
 
   return obj;
+}
+
+// For @layer statements (no body), v4 advanced past trailing whitespace to the
+// start of the next token before recording end position.
+function layerStatementPos(
+  node: postcss.AtRule,
+  sourceName: string,
+): Position | undefined {
+  if (!node.source) return undefined;
+  const css = (node.source.input as { css: string }).css;
+  // source.end.offset points one past the last char (exclusive end)
+  let offset = node.source.end.offset;
+  while (offset < css.length && /[ \t\r\n]/.test(css[offset])) {
+    offset++;
+  }
+  const before = css.slice(0, offset);
+  const lines = before.split('\n');
+  const endLine = lines.length;
+  const endCol = lines[lines.length - 1].length + 1;
+  return new Position(
+    { line: node.source.start.line, column: node.source.start.column },
+    { line: endLine, column: endCol },
+    sourceName,
+  );
 }
 
 // Returns the brace-nesting depth in css at the given 1-based line/column.

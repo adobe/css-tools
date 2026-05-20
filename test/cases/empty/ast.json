@@ -1,1 +1,6 @@
-{"type":"stylesheet","stylesheet":{"source":"input.css","rules":[],"parsingErrors":[]}}
+{
+  "type": "stylesheet",
+  "stylesheet": {
+    "rules": []
+  }
+}

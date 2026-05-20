@@ -1,1 +1,74 @@
-{"type":"stylesheet","stylesheet":{"source":"input.css","rules":[{"type":"rule","selectors":["body"],"declarations":[{"type":"declaration","property":"background","value":"url('some;stuff;here') 50% 50% no-repeat","position":{"start":{"line":2,"column":3},"end":{"line":2,"column":56},"source":"input.css"}},{"type":"declaration","property":"background","value":"url('more stuff); here') 50% 50% no-repeat","position":{"start":{"line":3,"column":3},"end":{"line":3,"column":58},"source":"input.css"}},{"type":"declaration","property":"background","value":"url(https://example.com/a;b) 50% 50% no-repeat","position":{"start":{"line":4,"column":3},"end":{"line":4,"column":62},"source":"input.css"}}],"position":{"start":{"line":1,"column":1},"end":{"line":5,"column":2},"source":"input.css"}}],"parsingErrors":[]}}
+{
+  "type": "stylesheet",
+  "stylesheet": {
+    "rules": [
+      {
+        "type": "rule",
+        "selectors": [
+          "body"
+        ],
+        "declarations": [
+          {
+            "type": "declaration",
+            "property": "background",
+            "value": "url('some;stuff;here') 50% 50% no-repeat",
+            "position": {
+              "start": {
+                "line": 2,
+                "column": 3
+              },
+              "end": {
+                "line": 2,
+                "column": 55
+              },
+              "source": "input.css"
+            }
+          },
+          {
+            "type": "declaration",
+            "property": "background",
+            "value": "url('more stuff); here') 50% 50% no-repeat",
+            "position": {
+              "start": {
+                "line": 3,
+                "column": 3
+              },
+              "end": {
+                "line": 3,
+                "column": 57
+              },
+              "source": "input.css"
+            }
+          },
+          {
+            "type": "declaration",
+            "property": "background",
+            "value": "url(https://example.com/a;b) 50% 50% no-repeat",
+            "position": {
+              "start": {
+                "line": 4,
+                "column": 3
+              },
+              "end": {
+                "line": 4,
+                "column": 61
+              },
+              "source": "input.css"
+            }
+          }
+        ],
+        "position": {
+          "start": {
+            "line": 1,
+            "column": 1
+          },
+          "end": {
+            "line": 5,
+            "column": 2
+          },
+          "source": "input.css"
+        }
+      }
+    ]
+  }
+}
