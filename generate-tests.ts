@@ -1,13 +1,13 @@
 // Generates missing output source and AST files for the test cases
 // IMPORTANT: Always verify the generated files when using this!
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { CssStylesheetAST } from './src';
+import { parse, stringify } from './src/index.js';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const parse = require('./').parse;
-const stringify = require('./').stringify;
-
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const casesDir = path.join(__dirname, 'test', 'cases');
 const cases = fs.readdirSync(casesDir).map((f: string) => {
   return path.join(casesDir, f);
