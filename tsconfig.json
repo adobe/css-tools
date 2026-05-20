@@ -18,7 +18,8 @@
     "outDir": "dist",
     "moduleResolution": "bundler",
     "isolatedModules": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "types": ["node", "jest"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "generate-tests.ts"],
   "exclude": ["node_modules"]
