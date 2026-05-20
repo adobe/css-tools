@@ -14,10 +14,11 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
       - name: install
         run: npm install
       - run: npm run test
-      - uses: JS-DevTools/npm-publish@v1
-        with:
-          token: ${{ secrets.ADOBE_BOT_NPM_TOKEN }}
-          access: 'public'
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.ADOBE_BOT_NPM_TOKEN }}
