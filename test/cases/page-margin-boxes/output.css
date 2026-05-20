@@ -1,0 +1,51 @@
+@page {
+  margin: 2cm;
+  @top-left-corner {
+    content: "";
+  }
+  @top-left {
+    content: "Header Left";
+  }
+  @top-center {
+    content: "Page Title";
+  }
+  @top-right {
+    content: "Header Right";
+  }
+  @top-right-corner {
+    content: "";
+  }
+  @bottom-left-corner {
+    content: "";
+  }
+  @bottom-left {
+    content: "Footer Left";
+  }
+  @bottom-center {
+    content: counter(page);
+  }
+  @bottom-right {
+    content: "Footer Right";
+  }
+  @bottom-right-corner {
+    content: "";
+  }
+  @left-top {
+    content: "LT";
+  }
+  @left-middle {
+    content: "LM";
+  }
+  @left-bottom {
+    content: "LB";
+  }
+  @right-top {
+    content: "RT";
+  }
+  @right-middle {
+    content: "RM";
+  }
+  @right-bottom {
+    content: "RB";
+  }
+}
