@@ -145,7 +145,7 @@ function convertPos(
   source: postcss.Source | undefined,
   sourceName: string,
 ): Position | undefined {
-  if (!source) return undefined;
+  if (!source?.start || !source.end) return undefined;
   return new Position(
     { line: source.start.line, column: source.start.column },
     { line: source.end.line, column: source.end.column + 1 },
@@ -160,7 +160,7 @@ function convertDeclPos(
   node: postcss.Declaration,
   sourceName: string,
 ): Position | undefined {
-  if (!node.source) return undefined;
+  if (!node.source?.start || !node.source.end) return undefined;
   const parent = node.parent as postcss.Container & {
     raws?: { semicolon?: boolean };
   };
@@ -168,11 +168,11 @@ function convertDeclPos(
   const noSemicolon = isLastChild && parent?.raws?.semicolon === false;
 
   const endLine =
-    noSemicolon && parent.source
+    noSemicolon && parent.source?.end
       ? parent.source.end.line
       : node.source.end.line;
   const endCol =
-    noSemicolon && parent.source
+    noSemicolon && parent.source?.end
       ? parent.source.end.column
       : node.source.end.column;
 
@@ -621,10 +621,10 @@ function layerStatementPos(
   node: postcss.AtRule,
   sourceName: string,
 ): Position | undefined {
-  if (!node.source) return undefined;
+  if (!node.source?.start || !node.source.end) return undefined;
   const css = (node.source.input as { css: string }).css;
   // source.end.offset points one past the last char (exclusive end)
-  let offset = node.source.end.offset;
+  let offset = node.source.end.offset ?? 0;
   while (offset < css.length && /[ \t\r\n]/.test(css[offset])) {
     offset++;
   }
