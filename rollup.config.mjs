@@ -4,6 +4,11 @@ import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
 import dts from 'rollup-plugin-dts';
 
+// Fix source map paths: tsconfig rootDir:"." causes extra "../" level
+// ../../../src/ → ../../src/ so paths resolve correctly within the package
+const fixSourceMapPath = (relativeSourcePath) =>
+  relativeSourcePath.replace(/^(\.\.\/)*src\//, '../../src/');
+
 const config = [
   {
     input: 'src/index.ts',
@@ -13,6 +18,7 @@ const config = [
       format: 'umd',
       sourcemap: true,
       exports: 'named',
+      sourcemapPathTransform: fixSourceMapPath,
     },
     plugins: [
       resolve(),
@@ -36,6 +42,7 @@ const config = [
         dynamicImportInCjs: false,
         sourcemap: true,
         exports: 'named',
+        sourcemapPathTransform: fixSourceMapPath,
       },
     ],
     plugins: [
@@ -55,6 +62,7 @@ const config = [
         file: 'dist/esm/adobe-css-tools.mjs',
         sourcemap: true,
         exports: 'named',
+        sourcemapPathTransform: fixSourceMapPath,
       },
     ],
     plugins: [
