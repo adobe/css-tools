@@ -4,6 +4,9 @@ import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
 import dts from 'rollup-plugin-dts';
 
+// postcss and postcss-safe-parser are runtime deps, not to be bundled
+const external = ['postcss', 'postcss-safe-parser'];
+
 // Fix source map paths: tsconfig rootDir:"." causes extra "../" level
 // ../../../src/ → ../../src/ so paths resolve correctly within the package
 const fixSourceMapPath = (relativeSourcePath) =>
@@ -12,6 +15,7 @@ const fixSourceMapPath = (relativeSourcePath) =>
 const config = [
   {
     input: 'src/index.ts',
+    external,
     output: {
       name: 'cssTools',
       file: 'dist/umd/adobe-css-tools.js',
@@ -19,6 +23,10 @@ const config = [
       sourcemap: true,
       exports: 'named',
       sourcemapPathTransform: fixSourceMapPath,
+      globals: {
+        postcss: 'postcss',
+        'postcss-safe-parser': 'postcssSafeParser',
+      },
     },
     plugins: [
       resolve(),
@@ -34,6 +42,7 @@ const config = [
   },
   {
     input: 'src/index.ts',
+    external,
     output: [
       {
         name: 'cssTools',
@@ -49,12 +58,15 @@ const config = [
       commonjs({
         transformMixedEsModules: true,
       }),
-      typescript(),
+      typescript({
+        outputToFilesystem: false,
+      }),
       terser(),
     ],
   },
   {
     input: 'src/index.ts',
+    external,
     output: [
       {
         name: 'cssTools',
