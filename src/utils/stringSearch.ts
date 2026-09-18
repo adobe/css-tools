@@ -172,3 +172,63 @@ export const splitWithBracketAndQuoteSupport = (
   }
   return result;
 };
+
+/**
+ * Remove `/* ... *\/` comments from a string while preserving the content of
+ * quoted strings. A `/*` inside a quoted string does not start a comment, so
+ * comment-like text in an attribute-selector value must be kept verbatim.
+ * @example
+ * ```ts
+ * removeCommentWithQuoteSupport('a /*c*\/ b') // 'a  b'
+ * removeCommentWithQuoteSupport('a[title="/*x*\/"]') // 'a[title="/*x*\/"]'
+ * ```
+ */
+export const removeCommentWithQuoteSupport = (string: string): string => {
+  let result = '';
+  let currentPosition = 0;
+  let maxLoop = MAX_LOOP;
+
+  while (currentPosition < string.length && maxLoop > 0) {
+    const all = [
+      string.indexOf('/*', currentPosition),
+      string.indexOf('"', currentPosition),
+      string.indexOf("'", currentPosition),
+    ].filter((v) => v !== -1);
+
+    if (all.length === 0) {
+      result += string.substring(currentPosition);
+      return result;
+    }
+
+    const firstMatchPos = Math.min(...all);
+    result += string.substring(currentPosition, firstMatchPos);
+    const char = string[firstMatchPos];
+
+    if (char === '/') {
+      const endComment = string.indexOf('*/', firstMatchPos + 2);
+      if (endComment === -1) {
+        return result;
+      }
+      currentPosition = endComment + 2;
+    } else {
+      const endQuotePosition = indexOfArrayNonEscaped(
+        string,
+        [char],
+        firstMatchPos + 1,
+      );
+      if (endQuotePosition === -1) {
+        result += string.substring(firstMatchPos);
+        return result;
+      }
+      result += string.substring(firstMatchPos, endQuotePosition + 1);
+      currentPosition = endQuotePosition + 1;
+    }
+    maxLoop--;
+  }
+
+  if (maxLoop <= 0) {
+    throw new Error('Too many escaping');
+  }
+
+  return result;
+};
