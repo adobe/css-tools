@@ -360,4 +360,54 @@ describe('parse(str)', () => {
       }).toThrow();
     });
   });
+
+  describe('comment-like text inside attribute-selector strings', () => {
+    it('should keep a comment-like attribute value intact', () => {
+      const css = 'a[title="/*x*/"] { color: red; }';
+      const ast = parse(css);
+      const rule = ast.stylesheet.rules[0] as CssRuleAST;
+
+      expect(rule.selectors).toEqual(['a[title="/*x*/"]']);
+    });
+
+    it('should keep comment-like text spliced inside an attribute value', () => {
+      const css = 'a[data="a/*b*/c"] { color: red; }';
+      const ast = parse(css);
+      const rule = ast.stylesheet.rules[0] as CssRuleAST;
+
+      expect(rule.selectors).toEqual(['a[data="a/*b*/c"]']);
+    });
+
+    it('should keep comment-like text inside single-quoted attribute values', () => {
+      const css = "a[data='/*x*/'] { color: red; }";
+      const ast = parse(css);
+      const rule = ast.stylesheet.rules[0] as CssRuleAST;
+
+      expect(rule.selectors).toEqual(["a[data='/*x*/']"]);
+    });
+
+    it('should still strip a real comment that precedes a quoted attribute value', () => {
+      const css = 'a:not(/*x*/.b) { color: red; }';
+      const ast = parse(css);
+      const rule = ast.stylesheet.rules[0] as CssRuleAST;
+
+      expect(rule.selectors).toEqual(['a:not(.b)']);
+    });
+
+    it('should still strip a real comment between two compound selectors', () => {
+      const css = 'a /*c*/ b { color: red; }';
+      const ast = parse(css);
+      const rule = ast.stylesheet.rules[0] as CssRuleAST;
+
+      expect(rule.selectors).toEqual(['a  b']);
+    });
+
+    it('should strip a real comment but keep an adjacent comment-like string', () => {
+      const css = 'a[title="/*x*/"]/*real*/ { color: red; }';
+      const ast = parse(css);
+      const rule = ast.stylesheet.rules[0] as CssRuleAST;
+
+      expect(rule.selectors).toEqual(['a[title="/*x*/"]']);
+    });
+  });
 });
