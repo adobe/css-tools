@@ -34,6 +34,7 @@ import {
 } from '../type';
 import {
   indexOfArrayWithBracketAndQuoteSupport,
+  removeCommentWithQuoteSupport,
   splitWithBracketAndQuoteSupport,
 } from '../utils/stringSearch';
 
@@ -256,8 +257,8 @@ export const parse = (
     const fakeMatch = [selectorStr] as unknown as RegExpExecArray;
     processMatch(fakeMatch);
 
-    // remove comment in selector;
-    const res = trim(selectorStr).replace(commentRegex, '');
+    // remove comment in selector, but keep comment-like text inside strings;
+    const res = removeCommentWithQuoteSupport(trim(selectorStr));
 
     return splitWithBracketAndQuoteSupport(res, [',']).map((v) => trim(v));
   }
