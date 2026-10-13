@@ -54,6 +54,7 @@ const inputs = [
   'a {} /*',
   '{ color: red; }',
   'a {} } b {}',
+  'a { color: red; }\n/*# sourceMappingURL=data:application/json;base64,bm90LWpzb24= */',
 ];
 
 function visible(value) {

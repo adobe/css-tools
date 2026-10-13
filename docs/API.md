@@ -60,6 +60,9 @@ parse(css, { stripCommentsInValues: false })
 
 The option is part of the exported `ParseOptions` TypeScript interface.
 
+Input source maps are not loaded. `sourceMappingURL` comments are parsed like
+ordinary CSS comments; positions and parse errors refer to the provided CSS.
+
 ### `stringify(ast, options?)`
 
 Converts a CSS AST back to CSS string with configurable formatting.

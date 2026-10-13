@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restore V4-compatible value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS compatibility shims.
 - Keep the UMD browser bundle self-contained without external PostCSS globals.
 
+### Security
+- Require PostCSS 8.5.30 with patched `nanoid` and `source-map-js` dependencies.
+- Disable input source-map processing, matching V4 and preventing embedded or external source maps from being loaded while parsing CSS.
+
 ## [4.5.0] - 2026-05-20
 
 ### Added

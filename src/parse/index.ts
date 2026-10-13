@@ -39,6 +39,7 @@ import {
 } from '../utils/stringSearch';
 
 const commentRegex = /\/\*[^]*?(?:\*\/|$)/g;
+const postcssOptions: postcss.ProcessOptions = { map: false };
 
 export interface ParseOptions {
   source?: string;
@@ -172,7 +173,7 @@ function collectCompatibilityErrors(
     let text = segment.text;
     while (text.trim()) {
       try {
-        postcss.parse(text);
+        postcss.parse(text, postcssOptions);
         break;
       } catch (e) {
         if (!(e instanceof postcss.CssSyntaxError)) throw e;
@@ -958,10 +959,10 @@ export const parse = (
   let root: postcss.Root;
   let parsingErrors: CssParseError[] = [];
   try {
-    root = postcss.parse(css);
+    root = postcss.parse(css, postcssOptions);
   } catch (e) {
     if (!(e instanceof postcss.CssSyntaxError)) throw e;
-    root = safeParser(css);
+    root = safeParser(css, postcssOptions);
     parsingErrors = collectCompatibilityErrors(css, sourceName, root, silent);
   }
 

@@ -83,7 +83,7 @@ Converts a CSS AST back to CSS string with configurable formatting.
 - **Error Handling**: Configurable error handling with detailed position information
 - **Formatting Options**: Pretty print, minify, or custom formatting
 - **Performance Optimized**: Efficient parsing and stringification for large CSS files
-- **Source Maps**: Track original source positions for debugging and tooling
+- **Source Positions**: Track original source positions for debugging and tooling
 
 ### Supported CSS Features
 
@@ -140,6 +140,9 @@ console.log(rule.position?.start) // { line: 1, column: 1 }
 console.log(rule.position?.end) // { line: 1, column: 20 }
 ```
 
+Positions and parse errors refer to the supplied CSS. As in V4, input source maps
+are not loaded or resolved; `sourceMappingURL` comments remain ordinary CSS comments.
+
 For more examples, see the [Examples documentation](docs/EXAMPLES.md).
 
 ## Performance
@@ -162,7 +165,9 @@ Bootstrap's formatted output was about 4% slower in V5.
 
 These are sample measurements, not guaranteed speedups. Results depend on the CSS,
 runtime, and hardware. Module loading, cold-start time, and memory usage were not
-measured. See the `benchmark/` directory for the existing parser benchmark and its inputs.
+measured. These measurements used an earlier V5 compatibility candidate with
+PostCSS 8.5.15, before the final dependency updates. See the `benchmark/` directory
+for the existing parser benchmark and its inputs.
 
 ## V4 Compatibility Tests
 

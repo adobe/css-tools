@@ -64,6 +64,8 @@ const edgeCases = [
   '@unknown a { color:red; a { margin:0; } }',
   '@charset "UTF-8";\r\n/* comment */\r\na{color: red}',
   'a{color: red}\n\nb {margin: 0}',
+  'a { color: red; }\n/*# sourceMappingURL=data:application/json;base64,bm90LWpzb24= */',
+  'a { color red; }\n/*# sourceMappingURL=data:application/json;base64,bm90LWpzb24= */',
 ];
 
 cases.push(...edgeCases.map((css, index) => ({ name: `edge/${index}`, css })));
