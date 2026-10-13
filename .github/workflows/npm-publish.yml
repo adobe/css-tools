@@ -17,6 +17,7 @@ jobs:
           cache: 'npm'
       - name: install
         run: npm ci
+      - run: npm audit --omit=dev
       - run: npm run build
       - run: npm run test:bundles
       - run: npm run test

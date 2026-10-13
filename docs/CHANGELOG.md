@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Replace the parser internals with `postcss` and `postcss-safe-parser`, keeping the css-tools API, AST, and default output through compatibility shims.
 - Make V5 the final css-tools release; recommend migrating directly to PostCSS when possible.
-- Use clean, lockfile-based installs and validate all package bundles before publishing.
+- Use clean, lockfile-based installs and validate production dependencies and all package bundles before publishing.
 
 ### Fixed
 - Restore V4-compatible value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS compatibility shims.
