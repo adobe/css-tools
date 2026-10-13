@@ -4,28 +4,25 @@ const css =
   '@media screen { a { content: "/* text */"; color: red/**/blue; } }';
 
 describe('stripCommentsInValues', () => {
-  it.each([
-    undefined,
-    {},
-    { stripCommentsInValues: true },
-  ])('preserves V4 normalization by default with %j', (options:
-    | ParseOptions
-    | undefined) => {
-    expect(stringify(parse(css, options), { compress: true })).toBe(
-      '@media screen{a{content:"";color:redblue;}}',
-    );
-  });
+  it.each([undefined, {}, { stripCommentsInValues: true }])(
+    'preserves V4 normalization by default with %j',
+    (options: ParseOptions | undefined) => {
+      expect(stringify(parse(css, options), { compress: true })).toBe(
+        '@media screen{a{content:"";color:redblue;}}',
+      );
+    },
+  );
 
-  it.each([
-    false,
-    true,
-  ])('preserves quoted and embedded comment text when disabled, silent=%j', (silent) => {
-    expect(
-      stringify(parse(css, { silent, stripCommentsInValues: false }), {
-        compress: true,
-      }),
-    ).toBe('@media screen{a{content:"/* text */";color:red/**/blue;}}');
-  });
+  it.each([false, true])(
+    'preserves quoted and embedded comment text when disabled, silent=%j',
+    (silent) => {
+      expect(
+        stringify(parse(css, { silent, stripCommentsInValues: false }), {
+          compress: true,
+        }),
+      ).toBe('@media screen{a{content:"/* text */";color:red/**/blue;}}');
+    },
+  );
 
   it('preserves raw value comments that PostCSS separates from the value', () => {
     expect(
