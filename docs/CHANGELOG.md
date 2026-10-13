@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 5.0.0
+
+### Added
+- Add `parse` option `stripCommentsInValues`, enabled by default for V4 compatibility, with an opt-out for preserving comment-like text in values.
+- Export the `ParseOptions` TypeScript interface.
+- Add differential tests against published V4, including seeded generated CSS, checksum-pinned public stylesheets, and package bundle checks.
+
+### Changed
+- Replace the parser internals with `postcss` and `postcss-safe-parser`, keeping the css-tools API, AST, and default output through compatibility shims.
+- Make V5 the final css-tools release; recommend migrating directly to PostCSS when possible.
+- Use clean, lockfile-based installs and validate all package bundles before publishing.
+
+### Fixed
+- Restore V4-compatible value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS compatibility shims.
+- Keep the UMD browser bundle self-contained without external PostCSS globals.
+
 ## [4.5.0] - 2026-05-20
 
 ### Added

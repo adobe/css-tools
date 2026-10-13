@@ -22,6 +22,7 @@ Parses CSS code and returns an Abstract Syntax Tree (AST).
 - `options` (object, optional) - Parsing options
   - `silent` (boolean) - Silently fail on parse errors instead of throwing. When `true`, errors are collected in `ast.stylesheet.parsingErrors`
   - `source` (string) - File path for better error reporting
+  - `stripCommentsInValues` (boolean, default: `true`) - Apply V4's declaration-value normalization, removing `/* ... */` text even inside quoted strings. Set to `false` to preserve comment-like text in values. Standalone comment AST nodes are unaffected.
 
 #### Returns
 
@@ -42,6 +43,22 @@ const css = `
 const ast = parse(css);
 console.log(ast.stylesheet.rules);
 ```
+
+V4 historically treats comment-like text inside quoted values as a comment.
+V5 preserves this behavior by default, with an explicit opt-out:
+
+```javascript
+const css = 'a { content: "/* literal text */"; }';
+
+parse(css).stylesheet.rules[0].declarations[0].value;
+// => '""'
+
+parse(css, { stripCommentsInValues: false })
+  .stylesheet.rules[0].declarations[0].value;
+// => '"/* literal text */"'
+```
+
+The option is part of the exported `ParseOptions` TypeScript interface.
 
 ### `stringify(ast, options?)`
 

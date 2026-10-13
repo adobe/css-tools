@@ -1,10 +1,12 @@
+import { readFileSync } from 'node:fs';
 import commonjs from '@rollup/plugin-commonjs';
 import resolve from '@rollup/plugin-node-resolve';
+import replace from '@rollup/plugin-replace';
 import terser from '@rollup/plugin-terser';
 import typescript from '@rollup/plugin-typescript';
 import dts from 'rollup-plugin-dts';
 
-// postcss and postcss-safe-parser are runtime deps, not to be bundled
+// Module builds use installed dependencies; UMD remains a standalone browser bundle.
 const external = ['postcss', 'postcss-safe-parser'];
 
 // Fix source map paths: tsconfig rootDir:"." causes extra "../" level
@@ -15,7 +17,6 @@ const fixSourceMapPath = (relativeSourcePath) =>
 const config = [
   {
     input: 'src/index.ts',
-    external,
     output: {
       name: 'cssTools',
       file: 'dist/umd/adobe-css-tools.js',
@@ -23,14 +24,17 @@ const config = [
       sourcemap: true,
       exports: 'named',
       sourcemapPathTransform: fixSourceMapPath,
-      globals: {
-        postcss: 'postcss',
-        'postcss-safe-parser': 'postcssSafeParser',
-      },
+      banner:
+        '/*! @adobe/css-tools | Third-party licenses: adobe-css-tools.LICENSES.txt */',
     },
     plugins: [
-      resolve(),
+      resolve({ browser: true, preferBuiltins: false }),
       commonjs(),
+      replace({
+        preventAssignment: true,
+        'process.env.NODE_ENV': JSON.stringify('production'),
+        'process.env.LANG': 'undefined',
+      }),
       typescript({
         outputToFilesystem: false,
         compilerOptions: {
@@ -38,6 +42,24 @@ const config = [
         },
       }),
       terser(),
+      {
+        name: 'bundled-license-notices',
+        generateBundle() {
+          this.emitFile({
+            type: 'asset',
+            fileName: 'adobe-css-tools.LICENSES.txt',
+            source: ['postcss', 'postcss-safe-parser', 'nanoid', 'picocolors']
+              .map(
+                (name) =>
+                  `${name}\n\n${readFileSync(
+                    new URL(`./node_modules/${name}/LICENSE`, import.meta.url),
+                    'utf8',
+                  )}`,
+              )
+              .join('\n\n'),
+          });
+        },
+      },
     ],
   },
   {

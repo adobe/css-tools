@@ -33,37 +33,42 @@ import {
   CssTypes,
   type CssViewTransitionAST,
 } from '../type';
-import { splitWithBracketAndQuoteSupport } from '../utils/stringSearch';
+import {
+  indexOfArrayNonEscaped,
+  splitWithBracketAndQuoteSupport,
+} from '../utils/stringSearch';
 
 const commentRegex = /\/\*[^]*?(?:\*\/|$)/g;
+
+export interface ParseOptions {
+  source?: string;
+  silent?: boolean;
+  stripCommentsInValues?: boolean;
+}
 
 function trim(str: string): string {
   return str ? str.trim() : '';
 }
 
-// Returns true if the CSS contains any unclosed block comment.
-// Closed comment: /* ... */. Unclosed: /* ... <eof>
-function hasUnclosedComment(css: string): boolean {
-  const re = /\/\*[^]*?(?:\*\/|$)/g;
-  let match: RegExpExecArray | null;
-  match = re.exec(css);
-  while (match !== null) {
-    if (!match[0].endsWith('*/')) return true;
-    match = re.exec(css);
-  }
-  return false;
-}
-
 // Splits CSS into top-level rule/at-rule/statement segments for error detection.
 // Handles string literals and comments to avoid false boundaries.
-function splitTopLevelSegments(css: string): string[] {
-  const segments: string[] = [];
+function splitTopLevelSegments(
+  css: string,
+): Array<{ text: string; offset: number }> {
+  const segments: Array<{ text: string; offset: number }> = [];
   let depth = 0;
+  let parentheses = 0;
+  let brackets = 0;
   let start = 0;
   let i = 0;
 
   while (i < css.length) {
     const ch = css[i];
+
+    if (ch === '\\') {
+      i += 2;
+      continue;
+    }
 
     // Skip string literals
     if (ch === '"' || ch === "'") {
@@ -85,24 +90,34 @@ function splitTopLevelSegments(css: string): string[] {
       continue;
     }
 
+    if (ch === '(') parentheses++;
+    else if (ch === ')') parentheses = Math.max(0, parentheses - 1);
+    else if (ch === '[') brackets++;
+    else if (ch === ']') brackets = Math.max(0, brackets - 1);
+
+    if (parentheses || brackets) {
+      i++;
+      continue;
+    }
+
     if (ch === '{') {
       depth++;
     } else if (ch === '}') {
       if (depth > 0) {
         depth--;
         if (depth === 0) {
-          segments.push(css.slice(start, i + 1));
+          segments.push({ text: css.slice(start, i + 1), offset: start });
           start = i + 1;
         }
       } else {
         // Orphan close brace
         const before = css.slice(start, i);
-        if (before.trim()) segments.push(before);
-        segments.push('}');
+        if (before.trim()) segments.push({ text: before, offset: start });
+        segments.push({ text: '}', offset: i });
         start = i + 1;
       }
     } else if (ch === ';' && depth === 0) {
-      segments.push(css.slice(start, i + 1));
+      segments.push({ text: css.slice(start, i + 1), offset: start });
       start = i + 1;
     }
 
@@ -110,33 +125,291 @@ function splitTopLevelSegments(css: string): string[] {
   }
 
   const tail = css.slice(start);
-  if (tail.trim()) segments.push(tail);
+  if (tail.trim()) segments.push({ text: tail, offset: start });
 
   return segments;
 }
 
-// Collect parse errors in silent mode by strict-parsing each top-level segment.
-function collectSilentErrors(css: string, sourceName: string): CssParseError[] {
+function pointAt(css: string, offset: number) {
+  const before = css.slice(0, offset);
+  const line = before.split('\n').length;
+  return { line, column: offset - before.lastIndexOf('\n') };
+}
+
+function offsetAt(css: string, line: number, column: number): number {
+  let offset = 0;
+  for (let index = 1; index < line; index++) {
+    offset = css.indexOf('\n', offset) + 1;
+  }
+  return offset + column - 1;
+}
+
+function compatibilityError(
+  css: string,
+  sourceName: string,
+  reason: string,
+  offset: number,
+): CssParseError {
+  const point = pointAt(css, offset);
+  return new CssParseError(
+    sourceName,
+    reason,
+    point.line,
+    point.column,
+    css.slice(offset),
+  );
+}
+
+function collectCompatibilityErrors(
+  css: string,
+  sourceName: string,
+  root: postcss.Root,
+  silent: boolean,
+): CssParseError[] {
   const errors: CssParseError[] = [];
   for (const segment of splitTopLevelSegments(css)) {
-    if (!segment.trim()) continue;
-    try {
-      postcss.parse(segment);
-    } catch (e) {
-      if (e instanceof postcss.CssSyntaxError) {
-        errors.push(
-          new CssParseError(
-            sourceName,
-            e.reason,
-            e.line ?? 1,
-            e.column ?? 1,
-            css,
-          ),
-        );
+    if (!segment.text.trim()) continue;
+    let text = segment.text;
+    while (text.trim()) {
+      try {
+        postcss.parse(text);
+        break;
+      } catch (e) {
+        if (!(e instanceof postcss.CssSyntaxError)) throw e;
+        const offset =
+          segment.offset + offsetAt(segment.text, e.line ?? 1, e.column ?? 1);
+        if (e.reason.startsWith('Unknown word')) {
+          let propertyComment = false;
+          root.walkDecls((node) => {
+            const start = node.source?.start?.offset ?? 0;
+            const between = node.raws.between ?? '';
+            if (
+              between.includes('/*') &&
+              offset >= start &&
+              offset < start + node.prop.length + between.length
+            ) {
+              propertyComment = true;
+            }
+          });
+          const property = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/.exec(
+            css.slice(offset),
+          );
+          if (!propertyComment) {
+            errors.push(
+              compatibilityError(
+                css,
+                sourceName,
+                "property missing ':'",
+                offset + (property?.[0].length ?? 0),
+              ),
+            );
+          }
+          const local = offset - segment.offset;
+          const end = text.indexOf(';', local);
+          if (end === -1) break;
+          text =
+            text.slice(0, local) +
+            text.slice(local, end + 1).replace(/[^\r\n]/g, ' ') +
+            text.slice(end + 1);
+          continue;
+        } else if (e.reason === 'Unexpected }') {
+          errors.push(compatibilityError(css, sourceName, "extra '}'", offset));
+        } else if (e.reason === 'Unclosed comment') {
+          errors.push(
+            compatibilityError(
+              css,
+              sourceName,
+              'End of comment missing',
+              offset,
+            ),
+          );
+        } else if (e.reason === 'Unclosed string') {
+          if (!silent && !/^\s*@(?:import|charset|namespace)\b/.test(text)) {
+            errors.push(
+              compatibilityError(css, sourceName, "missing '}'", offset),
+            );
+          }
+        } else if (e.reason !== 'Unclosed block') {
+          // V4 accepts arbitrary text in statement at-rules, including the
+          // deliberately malformed @import input in the security fixtures.
+          if (!/^\s*@(?:import|charset|namespace)\b/.test(segment.text)) {
+            errors.push(compatibilityError(css, sourceName, e.reason, offset));
+          }
+        }
+        break;
       }
     }
   }
   return errors;
+}
+
+function recoverCompatibility(
+  root: postcss.Root,
+  css: string,
+  sourceName: string,
+  errors: CssParseError[],
+  silent: boolean,
+): void {
+  const recoveryEnds = new Map<postcss.Container, number>();
+  root.walkComments((node) => {
+    const start = node.source?.start?.offset ?? 0;
+    if (css.startsWith('/*', start) && css.indexOf('*/', start + 2) === -1) {
+      const parent = node.parent;
+      node.remove();
+      let cursor = start;
+      if (parent && parent.type !== 'root') {
+        const property = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/.exec(
+          css.slice(start),
+        );
+        cursor += property?.[0].length ?? 0;
+        recoveryEnds.set(parent, cursor);
+        errors.push(
+          compatibilityError(css, sourceName, "property missing ':'", cursor),
+        );
+      }
+      if (silent) {
+        for (let offset = cursor; offset < css.length; offset++) {
+          if (!/\s/.test(css[offset])) {
+            errors.push(
+              compatibilityError(css, sourceName, 'selector missing', offset),
+            );
+          }
+        }
+      }
+    }
+  });
+  root.walk((node) => {
+    const start = node.source?.start?.offset ?? 0;
+    if (node.type === 'rule' && !node.selector.trim()) {
+      node.remove();
+      for (
+        let offset = start;
+        offset < (node.source?.end?.offset ?? css.length);
+        offset++
+      ) {
+        if (!/\s/.test(css[offset])) {
+          errors.push(
+            compatibilityError(
+              css,
+              sourceName,
+              css[offset] === '}' ? "extra '}'" : 'selector missing',
+              offset,
+            ),
+          );
+        }
+      }
+    } else if (node.type === 'decl') {
+      const value = node.raws.value?.raw ?? node.value;
+      if (
+        (value.startsWith('"') || value.startsWith("'")) &&
+        indexOfArrayNonEscaped(value, [value[0]], 1) === -1 &&
+        node.source
+      ) {
+        const offset =
+          start + node.prop.length + (node.raws.between?.length ?? 1);
+        const end = pointAt(css, offset);
+        node.value = '';
+        delete node.raws.value;
+        node.source.end = { ...end, offset };
+      }
+    } else if (
+      (node.type === 'rule' || node.type === 'atrule') &&
+      node.nodes &&
+      node.source &&
+      !node.source.end
+    ) {
+      const last = node.last;
+      const cursor = recoveryEnds.get(node) ?? css.length;
+      if (
+        last?.type === 'decl' &&
+        !recoveryEnds.has(node) &&
+        !css
+          .slice(last.source?.start?.offset ?? 0)
+          .trimEnd()
+          .endsWith(';')
+      ) {
+        last.remove();
+        errors.push(
+          compatibilityError(
+            css,
+            sourceName,
+            "property missing ':'",
+            css.length,
+          ),
+        );
+      }
+      errors.push(
+        compatibilityError(
+          css,
+          sourceName,
+          node.type === 'atrule' ? `@${node.name} missing '}'` : "missing '}'",
+          cursor,
+        ),
+      );
+      if (node.type === 'atrule') {
+        node.remove();
+        errors.push(
+          compatibilityError(css, sourceName, 'selector missing', cursor),
+        );
+        return;
+      }
+      node.removeAll();
+      const end = pointAt(css, cursor);
+      node.source.end = {
+        line: end.line,
+        column: end.column - 1,
+        offset: cursor,
+      };
+    } else if (
+      node.type === 'atrule' &&
+      ((!node.nodes &&
+        /^(?:media|supports|container|host|document|font-face|page|property|counter-style|font-feature-values|scope|view-transition|position-try|starting-style)$/.test(
+          node.name,
+        )) ||
+        (/^(?:[-\w]+)?keyframes$/.test(node.name) && !node.params.trim()))
+    ) {
+      const missingName = /keyframes$/.test(node.name) && !node.params.trim();
+      const cursor = missingName
+        ? start + node.name.length + 1 + (node.raws.between?.length ?? 0)
+        : (node.source?.end?.offset ?? css.length);
+      errors.push(
+        compatibilityError(
+          css,
+          sourceName,
+          missingName ? '@keyframes missing name' : `@${node.name} missing '{'`,
+          cursor,
+        ),
+      );
+      node.remove();
+      if (silent) {
+        if (cursor === css.length) {
+          errors.push(
+            compatibilityError(css, sourceName, 'selector missing', cursor),
+          );
+        } else {
+          for (let offset = cursor; offset < css.length; offset++) {
+            if (!/\s/.test(css[offset])) {
+              errors.push(
+                compatibilityError(
+                  css,
+                  sourceName,
+                  css[offset] === '}' ? "extra '}'" : 'selector missing',
+                  offset,
+                ),
+              );
+            }
+          }
+        }
+      }
+    }
+  });
+  errors.sort(
+    (a, b) =>
+      a.line - b.line ||
+      a.column - b.column ||
+      Number(a.reason === 'selector missing') -
+        Number(b.reason === 'selector missing'),
+  );
 }
 
 // PostCSS end is inclusive (last char); v4 css-tools end is exclusive (past last char).
@@ -213,11 +486,15 @@ function convertDeclaration(
   // PostCSS moves the IE6 star hack (*property) into raws.before — restore it.
   const rawsBefore =
     ((node.raws as Record<string, unknown>).before as string) ?? '';
-  const starPrefix = rawsBefore.endsWith('*') ? '*' : '';
+  const hackPrefix = /[*_]$/.exec(rawsBefore)?.[0] ?? '';
   return {
     type: CssTypes.declaration,
-    property: starPrefix + node.prop,
-    value: node.value + important,
+    property:
+      hackPrefix +
+      (node.prop + (node.raws.between ?? ':').split(':')[0])
+        .replace(commentRegex, '')
+        .trim(),
+    value: trim((node.raws.value?.raw ?? node.value) + important),
     position: convertDeclPos(node, sourceName),
   };
 }
@@ -342,7 +619,7 @@ function convertDeclNodes(
 }
 
 function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
-  let nameLower = node.name.toLowerCase();
+  let nameLower = node.name;
   let params = trim(node.params);
 
   // safe-parser artifact: @import:... tokenizes as name='import:' with colon attached.
@@ -639,90 +916,90 @@ function layerStatementPos(
   );
 }
 
-// Returns the brace-nesting depth in css at the given 1-based line/column.
-// Used to distinguish top-level parse errors from errors inside rule bodies.
-function depthAtPosition(css: string, line: number, col: number): number {
-  const lines = css.split('\n');
-  let depth = 0;
-  for (let l = 0; l < lines.length && l < line; l++) {
-    const end = l === line - 1 ? col - 1 : lines[l].length;
-    const text = lines[l].slice(0, end);
-    for (const ch of text) {
-      if (ch === '{') depth++;
-      else if (ch === '}') depth = Math.max(0, depth - 1);
-    }
-  }
-  return depth;
-}
-
 function buildStylesheet(
   root: postcss.Root,
   sourceName: string,
   source: string | undefined,
   parsingErrors: CssParseError[],
+  stripCommentsInValues: boolean,
 ): CssStylesheetAST {
   const rules: CssAtRuleAST[] = [];
   for (const node of root.nodes ?? []) {
     const converted = convertChildNode(node as postcss.ChildNode, sourceName);
     if (converted) rules.push(converted as CssAtRuleAST);
   }
+  if (stripCommentsInValues) stripValueComments(rules);
   return addParent({
     type: CssTypes.stylesheet,
     stylesheet: { source, rules, parsingErrors },
   } as CssStylesheetAST);
 }
 
+function stripValueComments(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const child of value) stripValueComments(child);
+  } else if (value && typeof value === 'object') {
+    if ('type' in value && value.type === CssTypes.declaration) {
+      const declaration = value as CssDeclarationAST;
+      declaration.value = declaration.value.replace(commentRegex, '');
+    } else {
+      for (const child of Object.values(value)) stripValueComments(child);
+    }
+  }
+}
+
 export const parse = (
   css: string,
-  options?: { source?: string; silent?: boolean },
+  options?: ParseOptions,
 ): CssStylesheetAST => {
   const sourceName = options?.source ?? '';
   const silent = options?.silent ?? false;
 
-  // Pre-check: unclosed comments must throw even before parsing
-  if (!silent && hasUnclosedComment(css)) {
-    throw new CssParseError(sourceName, 'End of comment missing', 1, 1, css);
-  }
-
-  if (silent) {
-    // Silent mode: use safe-parser for error recovery, collect errors via segment analysis
-    const parsingErrors = collectSilentErrors(css, sourceName);
-    const root = safeParser(css);
-    return buildStylesheet(root, sourceName, options?.source, parsingErrors);
-  }
-
-  // Non-silent mode: try strict parse first.
-  // Only fall back to safe-parser for top-level syntax errors (depth 0),
-  // not for errors inside rule bodies which represent truly invalid CSS.
   let root: postcss.Root;
+  let parsingErrors: CssParseError[] = [];
   try {
     root = postcss.parse(css);
   } catch (e) {
-    if (e instanceof postcss.CssSyntaxError) {
-      const depth = depthAtPosition(css, e.line ?? 1, e.column ?? 1);
-      if (depth > 0) {
-        // Error inside a rule body — the CSS is invalid, re-throw
-        throw new CssParseError(
-          sourceName,
-          e.reason,
-          e.line ?? 1,
-          e.column ?? 1,
-          css,
-        );
-      }
-    }
-    // Top-level syntax error — use safe-parser as lenient fallback
+    if (!(e instanceof postcss.CssSyntaxError)) throw e;
     root = safeParser(css);
+    parsingErrors = collectCompatibilityErrors(css, sourceName, root, silent);
   }
 
-  // Post-check: empty selectors must throw
-  for (const node of root.nodes ?? []) {
-    if (node.type === 'rule' && !(node as postcss.Rule).selector.trim()) {
-      throw new CssParseError(sourceName, 'Missing selector', 1, 1, css);
+  recoverCompatibility(root, css, sourceName, parsingErrors, silent);
+  if (!silent) {
+    const orphan = splitTopLevelSegments(css).find(
+      (segment) => segment.text === '}',
+    );
+    if (orphan) {
+      for (const node of [...root.nodes]) {
+        if ((node.source?.start?.offset ?? 0) >= orphan.offset) node.remove();
+      }
+      parsingErrors = parsingErrors.filter(
+        (error) => offsetAt(css, error.line, error.column) < orphan.offset,
+      );
     }
+    if (parsingErrors.length) throw parsingErrors[0];
   }
 
-  return buildStylesheet(root, sourceName, options?.source, []);
+  if (css.startsWith('\uFEFF')) {
+    root.walk((node) => {
+      for (const point of [node.source?.start, node.source?.end]) {
+        if (point) {
+          if (point.line === 1) point.column++;
+          if (point.offset !== undefined) point.offset++;
+        }
+      }
+    });
+    if (root.source) root.source.input.css = css;
+  }
+
+  return buildStylesheet(
+    root,
+    sourceName,
+    options?.source,
+    parsingErrors,
+    options?.stripCommentsInValues !== false,
+  );
 };
 
 export default parse;

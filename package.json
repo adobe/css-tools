@@ -1,6 +1,6 @@
 {
   "name": "@adobe/css-tools",
-  "version": "4.5.0",
+  "version": "5.0.0",
   "description": "A modern CSS parser and stringifier with TypeScript support",
   "source": "src/index.ts",
   "main": "./dist/cjs/adobe-css-tools.cjs",
@@ -29,6 +29,7 @@
     "@biomejs/biome": "^2.1.2",
     "@rollup/plugin-commonjs": "^29.0.0",
     "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-replace": "^6.0.3",
     "@rollup/plugin-terser": "^1.0.0",
     "@rollup/plugin-typescript": "^12.1.4",
     "@types/benchmark": "^2.1.1",
@@ -37,6 +38,7 @@
     "@types/node": "^25.0.3",
     "benchmark": "^2.1.4",
     "bytes": "^3.1.0",
+    "css-tools-v4": "npm:@adobe/css-tools@4.5.0",
     "jest": "^30.0.5",
     "rollup": "^4.45.1",
     "rollup-plugin-dts": "^6.2.1",
@@ -47,6 +49,9 @@
   "scripts": {
     "benchmark": "npm run build && node benchmark/index.mjs",
     "test": "jest",
+    "test:compatibility": "jest test/compatibility.test.ts --runInBand",
+    "test:compatibility:public": "node test/fetch-public-css.mjs && CSS_TOOLS_PUBLIC_CSS=1 npm run test:compatibility",
+    "test:bundles": "node test/bundle-compatibility.mjs",
     "clean": "rm -rf ./dist",
     "build": "rollup -c",
     "fix": "biome check --write",
