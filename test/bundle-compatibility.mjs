@@ -75,6 +75,16 @@ const inputs = [
   'garbage',
   'a{} garbage',
   'garbage; a{}',
+  'a{--foo\\:bar:red;}',
+  'a{*foo\\:bar:red; _foo\\:bar:blue;}',
+  'a{--x:{color:red; padding:0}}',
+  'a{--x:{--y:{color:red}}}',
+  '@media x{--x:{color:red; padding:0}}',
+  'a{--x:{color:red}; margin:0;}',
+  '@foo',
+  '@foo\r\n \t',
+  'a{}\r\n@foo\n',
+  '\uFEFF@foo\n',
 ];
 
 function visible(value) {
@@ -141,6 +151,11 @@ for (const [name, api] of bundles) {
     [
       'a{color:var(--x, /* ) ; } */ red);}',
       'a{color:var(--x, /* ) ; } */ red);}',
+    ],
+    ['a{--foo\\:bar:/*keep*/red;}', 'a{--foo\\:bar:/*keep*/red;}'],
+    [
+      'a{--x:{color:/*keep*/red; padding:0}}',
+      'a{--x:{color:/*keep*/red;padding:0;}}',
     ],
   ]) {
     for (const silent of [false, true]) {

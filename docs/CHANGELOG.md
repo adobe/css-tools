@@ -21,9 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve V4 compatibility for value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS shims. The known issues below remain.
 - Eliminate per-error reparsing and repeated whole-tree and source-prefix scans in the compatibility layer.
 - Preserve full declaration-value spans, including leading and trailing comments, V4 whitespace, and delimiter positions.
+- Restore V4 property/value boundaries for escaped property-name colons.
+- Preserve V4 nested-rule classification for custom-property blocks without per-block reparsing.
 - Restore V4 handling of missing semicolons, extra colons, and empty-property recovery.
 - Preserve comments in at-rule preludes.
-- Include trailing whitespace in generic statement at-rule end positions, matching V4.
+- Include trailing whitespace in generic statement at-rule end positions, including bare EOF statements, matching V4.
 - Keep the UMD browser bundle self-contained without external PostCSS globals.
 
 ### Security

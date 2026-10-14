@@ -156,6 +156,43 @@ const regressions = [
   ['bom-unknown-top-level-tail', '\uFEFFa{} \r\ngarbage'],
   ['top-level-declaration', 'color:red;'],
   ['declaration-prefix-in-selector', 'color:red; a{}'],
+  ['escaped-custom-property-colon', 'a{--foo\\:bar:red;}'],
+  ['escaped-property-colon', 'a{foo\\:bar:red;}'],
+  ['escaped-hack-property-colon', 'a{*foo\\:bar:red; _foo\\:bar:blue;}'],
+  ['escaped-commented-property-colon', 'a{co/**/lor\\:name:/* keep */red;}'],
+  ['multiple-escaped-property-colons', 'a{--foo\\:bar\\:baz:red;}'],
+  ['escaped-property-empty-value', 'a{--foo\\:bar:;}'],
+  ['escaped-property-important', 'a{--foo\\:bar:red !important;}'],
+  ['escaped-property-separator-whitespace', 'a { --foo\\:bar : "red"; }'],
+  ['custom-property-block', 'a{--x : {a:b}}'],
+  ['custom-property-block-semicolons', 'a{--x:{color:red; padding:0}}'],
+  ['custom-property-block-prefix', 'a{--x:prefix {a:b}}'],
+  ['custom-property-block-comments', 'a{--x:/* name */{color:/* keep */red}}'],
+  ['nested-custom-property-blocks', 'a{--x:{--y:{color:red}}}'],
+  ['custom-property-block-quoted-header', 'a{--x:"{};--z:" {color:red}}'],
+  [
+    'custom-property-literal-delimiters',
+    'a{--x:"{color:red;}"; --y:var(--z,{padding:0});}',
+  ],
+  [
+    'custom-property-block-siblings',
+    'a{color:blue; --x:{color:red; padding:0} margin:0;} b{padding:1px;}',
+  ],
+  ['custom-property-block-trailing-semicolon', 'a{--x:{color:red}; margin:0;}'],
+  ['custom-property-block-media', '@media x{--x:{color:red; padding:0}}'],
+  ['custom-property-block-layer', '@layer x{a{--x:{color:red}}}'],
+  ['custom-property-block-generic', '@unknown x{--x:{color:red}}'],
+  ['custom-property-block-root', '--x:{color:red}'],
+  [
+    'custom-property-block-bom-crlf',
+    '\uFEFFa{\r\n --x : {\r\n color:red;\r\n padding:0\r\n }\r\n}',
+  ],
+  ['generic-eof', '@foo'],
+  ['generic-eof-space', '@foo '],
+  ['generic-eof-newline', '@foo\n'],
+  ['generic-eof-crlf', '@foo\r\n \t'],
+  ['generic-eof-after-rule', 'a{}\r\n@foo\n'],
+  ['generic-eof-bom', '\uFEFF@foo\n'],
 ];
 cases.push(
   ...regressions.map(([name, css]) => ({ name: `regression/${name}`, css })),
@@ -384,4 +421,30 @@ describe.each([
       }
     },
   );
+});
+
+describe.each([
+  {
+    name: 'separate custom-property blocks',
+    css: 'a{--x:{color:red; padding:0}}\n'.repeat(128),
+  },
+  {
+    name: 'nested custom-property blocks',
+    css: `a{${'--x:{'.repeat(128)}color:red${'}'.repeat(128)}}`,
+  },
+])('V4 block classification complexity: $name', ({ css }) => {
+  it('does not reparse each custom-property block', () => {
+    const expected = parseV4(css);
+    const parsing = jest.spyOn(postcss, 'parse');
+    try {
+      const actual = parse(css);
+      expect(
+        firstDifference(observable(actual), observable(expected)),
+      ).toBeUndefined();
+      expect(parentDifference(actual)).toBeUndefined();
+      expect(parsing).toHaveBeenCalledTimes(1);
+    } finally {
+      parsing.mockRestore();
+    }
+  });
 });

@@ -40,6 +40,15 @@ import {
 
 const commentRegex = /\/\*[^]*?(?:\*\/|$)/g;
 const propertyPrefixRegex = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/;
+const keyframesRegex = /^([-\w]+)?keyframes$/;
+const DECLARATION_ONLY_AT_RULES = new Set([
+  'font-face',
+  'page',
+  'property',
+  'counter-style',
+  'view-transition',
+  'position-try',
+]);
 const postcssOptions: postcss.ProcessOptions = { map: false };
 
 export interface ParseOptions {
@@ -50,6 +59,87 @@ export interface ParseOptions {
 
 function trim(str: string): string {
   return str ? str.trim() : '';
+}
+
+function prepareCompatibilityInput(css: string): {
+  css: string;
+  ruleStarts: ReadonlySet<number>;
+} {
+  const ruleStarts = new Set<number>();
+  if (!css.includes('--')) return { css, ruleStarts };
+  const contexts: Array<{ nesting: boolean; keyframes: boolean }> = [];
+  let nesting = true;
+  let keyframes = false;
+  let parentheses = 0;
+  let brackets = 0;
+  let quote = '';
+  let start: number | undefined;
+
+  for (let offset = 0; offset < css.length; offset++) {
+    const char = css[offset];
+    if (char === '\\') {
+      if (start === undefined) start = offset;
+      offset++;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (char === '/' && css[offset + 1] === '*') {
+      const end = css.indexOf('*/', offset + 2);
+      if (end === -1) break;
+      offset = end + 1;
+      continue;
+    }
+    if (start === undefined && !/\s/.test(char)) start = offset;
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === '(') parentheses++;
+    else if (char === ')') parentheses = Math.max(0, parentheses - 1);
+    else if (char === '[') brackets++;
+    else if (char === ']') brackets = Math.max(0, brackets - 1);
+    if (parentheses || brackets) continue;
+
+    if (char === '{') {
+      const name =
+        start !== undefined && css[start] === '@'
+          ? /^@([-\w]+)/.exec(css.slice(start, offset))?.[1]
+          : undefined;
+      if (nesting && start !== undefined && css.startsWith('--', start)) {
+        ruleStarts.add(start);
+      }
+      contexts.push({ nesting, keyframes });
+      const blockKeyframes = name !== undefined && keyframesRegex.test(name);
+      nesting =
+        name === undefined
+          ? nesting && !keyframes
+          : !blockKeyframes &&
+            !DECLARATION_ONLY_AT_RULES.has(name) &&
+            !PAGE_MARGIN_BOX_NAMES.has(name);
+      keyframes = blockKeyframes;
+      start = undefined;
+    } else if (char === '}') {
+      const context = contexts.pop();
+      nesting = context?.nesting ?? true;
+      keyframes = context?.keyframes ?? false;
+      start = undefined;
+    } else if (char === ';') start = undefined;
+  }
+  if (!ruleStarts.size) return { css, ruleStarts };
+
+  // Mask only the custom-property prefix so PostCSS classifies V4 blocks as
+  // rules in one parse. Equal-length substitutions keep every source offset.
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const start of ruleStarts) {
+    parts.push(css.slice(cursor, start), '__');
+    cursor = start + 2;
+  }
+  parts.push(css.slice(cursor));
+  return { css: parts.join(''), ruleStarts };
 }
 
 // Splits CSS into top-level rule/at-rule/statement segments for error detection.
@@ -192,12 +282,12 @@ function declarationValueEnd(value: string, preserveComments: boolean): number {
   return -1;
 }
 
-// Safe-parser can split one V4 declaration into several nodes. Recover the
-// original value span, including comments which PostCSS stores outside value.
-function restoreDeclarationSpans(
+// Restore V4 boundaries and raw fields from the unmodified input.
+function restoreCompatibilitySpans(
   root: postcss.Root,
   source: CompatibilitySource,
   preserveComments: boolean,
+  ruleStarts: ReadonlySet<number>,
 ): void {
   function restoreContainer(container: postcss.Container): void {
     if (!container.nodes) return;
@@ -227,6 +317,14 @@ function restoreDeclarationSpans(
       );
       if (relativeEnd === -1) continue;
       consumedEnd = valueStart + relativeEnd;
+      if (node.prop !== property[1]) {
+        node.prop = property[1];
+        node.raws.before = node.raws.before?.replace(/[*_]$/, '');
+        node.raws.between = source.css.slice(
+          start + property[1].length,
+          valueStart,
+        );
+      }
       node.value = trim(source.css.slice(valueStart, consumedEnd));
       node.important = false;
       delete node.raws.value;
@@ -244,6 +342,34 @@ function restoreDeclarationSpans(
 
   restoreContainer(root);
   root.walk((node) => {
+    const start = node.source?.start?.offset;
+    if (node.type === 'rule' && start !== undefined && ruleStarts.has(start)) {
+      const selector = node.raws.selector?.raw ?? node.selector;
+      node.selector = source.css.slice(start, start + selector.length);
+      delete node.raws.selector;
+      const suffix = node.raws.ownSemicolon;
+      const end = node.source?.end?.offset;
+      if (suffix && end !== undefined && node.source) {
+        const offset = end - suffix.length;
+        node.source.end = {
+          ...source.pointAt(offset - 1),
+          offset,
+        };
+        delete node.raws.ownSemicolon;
+      }
+    } else if (
+      node.type === 'atrule' &&
+      !node.nodes &&
+      node.source?.start &&
+      !node.source.end
+    ) {
+      const end = source.pointAt(source.css.length);
+      node.source.end = {
+        line: end.line,
+        column: end.column - 1,
+        offset: source.css.length,
+      };
+    }
     if (node.type === 'rule' || node.type === 'atrule') restoreContainer(node);
   });
 }
@@ -585,7 +711,7 @@ function recoverCompatibility(
         /^(?:media|supports|container|host|document|font-face|page|property|counter-style|font-feature-values|scope|view-transition|position-try|starting-style)$/.test(
           node.name,
         )) ||
-        (/^(?:[-\w]+)?keyframes$/.test(node.name) && !node.params.trim()))
+        (keyframesRegex.test(node.name) && !node.params.trim()))
     ) {
       const missingName = /keyframes$/.test(node.name) && !node.params.trim();
       const cursor = missingName
@@ -787,7 +913,7 @@ function convertKeyframes(
   params: string,
   sourceName: string,
 ): CssKeyframesAST {
-  const vendorMatch = /^([-\w]+)?keyframes$/.exec(nameLower);
+  const vendorMatch = keyframesRegex.exec(nameLower);
   const vendor = vendorMatch?.[1] || undefined;
 
   const keyframes: Array<CssKeyframeAST | CssCommentAST> = [];
@@ -850,7 +976,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
     params = `:${params}`;
   }
 
-  if (/^([-\w]+)?keyframes$/.test(nameLower)) {
+  if (keyframesRegex.test(nameLower)) {
     return convertKeyframes(node, nameLower, params, sourceName);
   }
 
@@ -1174,14 +1300,15 @@ export const parse = (
 ): CssStylesheetAST => {
   const sourceName = options?.source ?? '';
   const silent = options?.silent ?? false;
+  const input = prepareCompatibilityInput(css);
 
   let root: postcss.Root;
   let syntaxError: postcss.CssSyntaxError | undefined;
   try {
-    root = postcss.parse(css, postcssOptions);
+    root = postcss.parse(input.css, postcssOptions);
   } catch (e) {
     if (!(e instanceof postcss.CssSyntaxError)) throw e;
-    root = safeParser(css, postcssOptions);
+    root = safeParser(input.css, postcssOptions);
     syntaxError = e;
   }
 
@@ -1194,14 +1321,17 @@ export const parse = (
         }
       }
     });
-    if (root.source) root.source.input.css = css;
+  }
+  if (root.source && (input.css !== css || css.startsWith('\uFEFF'))) {
+    root.source.input.css = css;
   }
 
   const source = new CompatibilitySource(css, sourceName);
-  restoreDeclarationSpans(
+  restoreCompatibilitySpans(
     root,
     source,
     options?.stripCommentsInValues === false,
+    input.ruleStarts,
   );
   let parsingErrors = collectCompatibilityErrors(
     source,

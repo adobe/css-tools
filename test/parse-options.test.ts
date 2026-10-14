@@ -53,6 +53,12 @@ describe('stripCommentsInValues', () => {
         'a{color:var(--x, /* ) ; } */ red);}',
         'a{color:var(--x, /* ) ; } */ red);}',
       ],
+      ['a{--foo\\:bar:/*keep*/red;}', 'a{--foo\\:bar:/*keep*/red;}'],
+      [
+        'a{--x:{color:/*keep*/red; padding:0}}',
+        'a{--x:{color:/*keep*/red;padding:0;}}',
+      ],
+      ['a{--x:{--y:{color:/*keep*/red}}}', 'a{--x:{--y:{color:/*keep*/red;}}}'],
     ])('preserves the full value of %s', (input, expected) => {
       expect(
         stringify(parse(input, { silent, stripCommentsInValues: false }), {
@@ -74,6 +80,43 @@ describe('stripCommentsInValues', () => {
       '"/* text */"',
     );
     expect(stringify(parse(plain))).toContain('""');
+  });
+
+  it.each([false, true])(
+    'keeps V4 escaped-property fields, stripCommentsInValues=%j',
+    (stripCommentsInValues) => {
+      expect(
+        parse('a{--foo\\:bar:/*keep*/red;}', { stripCommentsInValues }),
+      ).toMatchObject({
+        stylesheet: {
+          rules: [
+            {
+              declarations: [
+                {
+                  property: '--foo\\',
+                  value: stripCommentsInValues ? 'bar:red' : 'bar:/*keep*/red',
+                },
+              ],
+            },
+          ],
+        },
+      });
+    },
+  );
+
+  it.each([
+    '@font-face{--x:{a:b}}',
+    '@page{--x:{a:b}}',
+    '@property --test{--x:{a:b}}',
+    '@counter-style test{--x:{a:b}}',
+    '@view-transition{--x:{a:b}}',
+    '@position-try --test{--x:{a:b}}',
+    '@keyframes x{0%{--x:{a:b}}}',
+    '@-webkit-keyframes x{0%{--x:{a:b}}}',
+    '@page{@top-left{--x:{a:b}}}',
+  ])('keeps declaration-only block handling for %s', (input) => {
+    const result = stringify(parse(input), { compress: true });
+    expect(result).toContain('--x:{a:b;');
   });
 
   describe.each([false, true])(
