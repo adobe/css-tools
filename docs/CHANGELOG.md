@@ -8,22 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [5.0.0] - 2026-10-13
 
 ### Added
-- Add `parse` option `stripCommentsInValues`, enabled by default for V4 compatibility, with an opt-out for preserving comment-like text in values.
+- Add `parse` option `stripCommentsInValues`, enabled by default for V4 compatibility, with an opt-out that preserves leading, embedded, and trailing value comments.
 - Export the `ParseOptions` TypeScript interface.
 - Add differential tests against published V4, including seeded generated CSS, checksum-pinned public stylesheets, and package bundle checks.
 
 ### Changed
-- Replace the parser internals with `postcss` and `postcss-safe-parser`, keeping the css-tools API, AST, and default output through compatibility shims.
+- Replace the parser internals with `postcss` and `postcss-safe-parser`, keeping the css-tools API and AST format, with default-output compatibility verified for the tested corpus.
 - Make V5 the final css-tools release; recommend migrating directly to PostCSS when possible.
 - Use clean, lockfile-based installs and validate production dependencies and all package bundles before publishing.
 
 ### Fixed
-- Restore V4-compatible value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS compatibility shims.
+- Improve V4 compatibility for value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS shims. The known issues below remain.
+- Eliminate per-error reparsing and repeated whole-tree and source-prefix scans in the compatibility layer.
+- Preserve full declaration-value spans, including leading and trailing comments, V4 whitespace, and delimiter positions.
+- Restore V4 handling of missing semicolons, extra colons, and empty-property recovery.
+- Preserve comments in at-rule preludes.
+- Include trailing whitespace in generic statement at-rule end positions, matching V4.
 - Keep the UMD browser bundle self-contained without external PostCSS globals.
 
 ### Security
 - Require PostCSS 8.5.30 with patched `nanoid` and `source-map-js` dependencies.
 - Disable input source-map processing, matching V4 and preventing embedded or external source maps from being loaded while parsing CSS.
+
+### Known Issues
+
+Upstream `postcss-safe-parser` recovery can exhaust the stack or memory on long
+sequences without declaration semicolons, even with `silent: true`. This
+limitation is accepted for the final V5 release and **will not be fixed** in
+css-tools. See [known issues in V5](../README.md#known-issues-in-v5) for an
+example and mitigation.
 
 ## [4.5.0] - 2026-05-20
 

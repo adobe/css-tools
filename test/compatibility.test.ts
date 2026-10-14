@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parse as parseV4, stringify as stringifyV4 } from 'css-tools-v4';
+import postcss from 'postcss';
 import { parse, stringify } from '../src/index';
 
 const cases = fs.readdirSync(path.join(__dirname, 'cases')).map((name) => ({
@@ -69,6 +70,96 @@ const edgeCases = [
 ];
 
 cases.push(...edgeCases.map((css, index) => ({ name: `edge/${index}`, css })));
+
+const regressions = [
+  ['leading-value-comment', 'a { color: /* keep */ red; }'],
+  ['missing-semicolon', 'a {\n color: red\n background: blue;\n}'],
+  ['double-colon', 'a { color:: red }'],
+  ['extra-value-colon', 'a { color: red: blue }'],
+  ['empty-property', 'a { : red }'],
+  ['empty-property-after-declaration', 'a { color: red; : blue; margin: 0; }'],
+  ['media-prelude-comment', '@media /* c */ screen { a {} }'],
+  ['import-prelude-comment', '@import url(x.css) /* c */ screen;'],
+  ['generic-prelude-comment', '@unknown /* c */ value;'],
+  ['trailing-value-comment', 'a { color: red /* brand */ }'],
+  ['multiple-trailing-value-comments', 'a { color: red /* a */ /* b */ }'],
+  ['trailing-value-comment-newline', 'a {\n color: red /* brand */\n}'],
+  ['generic-statement-newline', '@tailwind base;\n'],
+  ['generic-statement-whitespace', '@unknown value;\r\n \t a {}'],
+  ['nested-generic-statement', '@media screen { @unknown value;\n a {} }'],
+  ['commented-property', 'a { co/**/lor: /* keep */ red; }'],
+  [
+    'commented-hack-values',
+    'a { *zoom: /* keep */ 1; _color: blue /* end */ }',
+  ],
+  [
+    'standalone-comments-after-semicolons',
+    'a { color: red; /* keep */ margin: 0; /* end */ }',
+  ],
+  ['nested-trailing-value-comment', 'a { & b { color: red /* end */ } }'],
+  [
+    'important-trailing-comment',
+    'a { color: /* keep */ red !/**/important /* end */ }',
+  ],
+  [
+    'quoted-value-delimiters',
+    'a { content: "a;}"; background: url("data:x,{};"); }',
+  ],
+  ['bom-trailing-value-comment', '\uFEFFa { color: red /* end */ }'],
+  [
+    'bom-malformed-declarations',
+    '\uFEFFa {\r\n color red;\r\n margin: 0;\r\n}',
+  ],
+  [
+    'bom-malformed-empty-property',
+    '\uFEFFa { color: red; : blue; margin: 0; }',
+  ],
+  ['crlf-missing-semicolon', 'a {\r\n color: red\r\n margin: 0;\r\n}'],
+  ['layer-block-position', '@layer /* keep */ base { a {} }\r\n b {}'],
+  [
+    'document-block-position',
+    '@-moz-document /* keep */ url(x) { a {} }\n b {}',
+  ],
+  [
+    'supports-prelude-comments',
+    '@supports /* keep */ (display: grid) /* end */ { a {} }',
+  ],
+  ['import-leading-prelude-comment', '@import /* keep */ url(x.css) screen;'],
+  ['namespace-prelude-comment', '@namespace /* keep */ url("x");'],
+  [
+    'custom-media-prelude-comments',
+    '@custom-media --x /* keep  spacing */ (width > 1px);',
+  ],
+  [
+    'custom-media-multiline-prelude',
+    '@custom-media --x\n /* keep */ (width:\n  1px);\n',
+  ],
+  ['generic-block-prelude-comment', '@unknown /* keep */ x /* end */ { a {} }'],
+  [
+    'malformed-declarations-with-valid-siblings',
+    'a { color red; margin: 0; background blue; padding: 1px; }',
+  ],
+  [
+    'nested-malformed-declarations',
+    '@media screen { a { color red; margin: 0; } b {} }',
+  ],
+  [
+    'valid-rule-after-malformed-declarations',
+    'a { color red; margin: 0; } b { color: blue; }',
+  ],
+  ['malformed-unclosed-declaration', 'a { color red; margin: 0;'],
+  ['unknown-top-level-word', 'garbage'],
+  ['unknown-top-level-tail', 'a{} garbage'],
+  ['unknown-before-statement', 'garbage; @import "x";'],
+  ['unknown-prefix-in-selector', 'garbage; a{}'],
+  ['unknown-tail-after-malformed-rule', 'a { color red; } garbage'],
+  ['bom-unknown-top-level-tail', '\uFEFFa{} \r\ngarbage'],
+  ['top-level-declaration', 'color:red;'],
+  ['declaration-prefix-in-selector', 'color:red; a{}'],
+];
+cases.push(
+  ...regressions.map(([name, css]) => ({ name: `regression/${name}`, css })),
+);
 
 // A fixed seed makes generated failures reproducible.
 let seed = 0x405000;
@@ -263,4 +354,34 @@ describe.each(cases)('V4 compatibility: $name', ({ name, css }) => {
       );
     }
   });
+});
+
+describe.each([
+  { name: 'separate rules', css: 'a { color red; }\n'.repeat(128) },
+  { name: 'one rule', css: `a {${' color red;'.repeat(128)} }` },
+  { name: 'rules without semicolons', css: 'a { color red }\n'.repeat(128) },
+  {
+    name: 'empty recovered properties',
+    css: `a {${' : red;'.repeat(128)} margin: 0; }`,
+  },
+])('V5 error recovery complexity: $name', ({ css }) => {
+  it.each([false, true])(
+    'does not reparse or traverse all declarations per error, silent=%j',
+    (silent) => {
+      const expected = outcome(parseV4, css, { silent });
+      const parsing = jest.spyOn(postcss, 'parse');
+      const walking = jest.spyOn(postcss.Container.prototype, 'walkDecls');
+      try {
+        const actual = outcome(parse, css, { silent });
+        expect(
+          firstDifference(observable(actual), observable(expected)),
+        ).toBeUndefined();
+        expect(parsing.mock.calls.length).toBeLessThanOrEqual(2);
+        expect(walking.mock.calls.length).toBeLessThanOrEqual(1);
+      } finally {
+        parsing.mockRestore();
+        walking.mockRestore();
+      }
+    },
+  );
 });

@@ -12,11 +12,14 @@ Parse CSS into an Abstract Syntax Tree (AST) and convert it back to CSS with con
 V5 will be the **final release of `@adobe/css-tools`**. We recommend moving to
 [PostCSS](https://postcss.org/) directly whenever possible, especially for new projects.
 
-V5 is a **drop-in replacement for V4's public API**. It replaces the parser
-internals with PostCSS and adds a compatibility shim to preserve the existing
-`parse` and `stringify` API, css-tools AST, options, and default output behavior.
-Existing callers do not need to be rewritten, and the returned AST remains a
-css-tools AST rather than a native PostCSS AST. The V4 parser is not used at runtime.
+V5 retains **V4's public API and css-tools AST**. It replaces the parser
+internals with PostCSS and adds compatibility shims for existing options and
+default output. The returned AST remains a css-tools AST rather than a native
+PostCSS AST. The V4 parser is not used at runtime.
+
+Compatibility is verified for the tested corpus, not every CSS input. The
+[upstream recovery limitation](#known-issues-in-v5) is accepted for this final
+release and **will not be fixed** in css-tools.
 
 Using PostCSS directly is a separate migration: its API and AST differ from
 css-tools. V5 lets existing applications upgrade without that migration while
@@ -58,9 +61,9 @@ Parses CSS code and returns an Abstract Syntax Tree (AST).
 **Parameters:**
 - `code` (string) - The CSS code to parse
 - `options` (object, optional) - Parsing options
-  - `silent` (boolean) - Silently fail on parse errors instead of throwing
+  - `silent` (boolean) - Collect recoverable parse errors instead of throwing. Recovery can still throw for some malformed inputs; see [known issues](#known-issues-in-v5).
   - `source` (string) - File path for better error reporting
-  - `stripCommentsInValues` (boolean) - Remove comment-like text from declaration values, including inside quoted strings, for V4 compatibility (default: `true`). Set to `false` to preserve that text.
+  - `stripCommentsInValues` (boolean) - Remove comment-like text from declaration values, including inside quoted strings, for V4 compatibility (default: `true`). Set to `false` to preserve leading, embedded, and trailing value comments.
 
 **Returns:** `CssStylesheetAST` - The parsed CSS as an AST
 
@@ -200,6 +203,23 @@ on the full Bulma file, so this opt-in command can take several minutes.
 
 Passing these comparisons establishes exact parity for the tested inputs, not a
 proof of identical behavior for every possible CSS string.
+
+## Known Issues in V5
+
+**Upstream recovery resource exhaustion** is accepted and **will not be fixed**
+in css-tools. `postcss-safe-parser` recursively recovers long sequences without
+declaration semicolons, such as
+`'a {' + '\n color: red'.repeat(3100) + '\n}'`. This can overflow the stack or
+exhaust memory before the compatibility layer receives an AST, in both strict
+and silent modes. V4 accepts this input; the failure threshold depends on the
+runtime and resource limits. This limitation is in `postcss-safe-parser`, not
+core PostCSS or the css-tools compatibility layer.
+
+For untrusted CSS, `silent` is not an exception-safety or execution-time
+guarantee. Limit input size and isolate parsing in a worker or process with an
+enforceable timeout; an in-process timer cannot interrupt synchronous parsing.
+Applications relying on V4's behavior for this case should not treat V5 as a
+behaviorally identical upgrade.
 
 ## Documentation
 

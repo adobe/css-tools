@@ -20,9 +20,9 @@ Parses CSS code and returns an Abstract Syntax Tree (AST).
 
 - `code` (string) - The CSS code to parse
 - `options` (object, optional) - Parsing options
-  - `silent` (boolean) - Silently fail on parse errors instead of throwing. When `true`, errors are collected in `ast.stylesheet.parsingErrors`
+  - `silent` (boolean) - Collect recoverable parse errors in `ast.stylesheet.parsingErrors` instead of throwing. Some recovery failures can still throw; see [known V5 limitations](#known-v5-limitations).
   - `source` (string) - File path for better error reporting
-  - `stripCommentsInValues` (boolean, default: `true`) - Apply V4's declaration-value normalization, removing `/* ... */` text even inside quoted strings. Set to `false` to preserve comment-like text in values. Standalone comment AST nodes are unaffected.
+  - `stripCommentsInValues` (boolean, default: `true`) - Apply V4-style declaration-value normalization, removing `/* ... */` text even inside quoted strings. Set to `false` to preserve leading, embedded, and trailing value comments. Standalone comment AST nodes are unaffected.
 
 #### Returns
 
@@ -62,6 +62,15 @@ The option is part of the exported `ParseOptions` TypeScript interface.
 
 Input source maps are not loaded. `sourceMappingURL` comments are parsed like
 ordinary CSS comments; positions and parse errors refer to the provided CSS.
+
+#### Known V5 Limitations
+
+`postcss-safe-parser` has an
+[accepted recovery limitation](../README.md#known-issues-in-v5) that **will not
+be fixed** in css-tools: sufficiently long sequences of declarations without
+semicolons can exhaust the stack or memory before the compatibility layer
+receives an AST. Exact V4 behavior is not guaranteed outside the tested
+compatibility corpus.
 
 ### `stringify(ast, options?)`
 
@@ -217,7 +226,8 @@ type CompilerOptions = {
 
 ### Silent Parsing
 
-When parsing malformed CSS, you can use the `silent` option to collect errors instead of throwing:
+For recoverable syntax errors, use the `silent` option to collect errors
+instead of throwing:
 
 ```javascript
 import { parse } from '@adobe/css-tools';
@@ -239,6 +249,12 @@ if (result.stylesheet.parsingErrors) {
 // Valid rules are still parsed
 console.log('Valid rules:', result.stylesheet.rules.length);
 ```
+
+Silent mode does not guarantee that parsing returns an AST or finishes within
+a bounded time. The upstream `postcss-safe-parser` recovery path can exhaust
+the stack or memory on long sequences without semicolons. This is a
+[known V5 limitation](../README.md#known-issues-in-v5) that will not be fixed
+in css-tools.
 
 ### Source Tracking
 
@@ -324,7 +340,7 @@ const output: string = stringify(ast);
 
 ## Performance Considerations
 
-- The parser is optimized for large CSS files
+- Parsing performance depends on the input; upstream safe-parser recovery can [exhaust the stack or memory](../README.md#known-issues-in-v5) on long sequences without semicolons
 - AST nodes are lightweight and memory-efficient
 - Stringification is fast and supports streaming for large outputs
 - Consider using `compress: true` for production builds to reduce file size

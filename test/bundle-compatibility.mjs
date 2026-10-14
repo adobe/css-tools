@@ -55,6 +55,26 @@ const inputs = [
   '{ color: red; }',
   'a {} } b {}',
   'a { color: red; }\n/*# sourceMappingURL=data:application/json;base64,bm90LWpzb24= */',
+  'a { color: /* keep */ red; }',
+  'a {\n color: red\n background: blue;\n}',
+  'a { color:: red }',
+  'a { color: red: blue }',
+  'a { : red }',
+  'a { color: red; : blue; margin: 0; }',
+  '@media /* keep */ screen { a {} }',
+  '@import url(x.css) /* keep */ screen;',
+  '@unknown /* keep */ value;',
+  '@custom-media --x /* keep  spacing */ (width > 1px);',
+  'a { color: red /* brand */ }',
+  'a { color: red /* a */ /* b */ }',
+  '@tailwind base;\n',
+  '@unknown value;\r\n \t a {}',
+  '@media screen { @unknown value;\n a {} }',
+  '\uFEFFa {\r\n color red;\r\n margin: 0;\r\n}',
+  'a { color red }\na { color red }',
+  'garbage',
+  'a{} garbage',
+  'garbage; a{}',
 ];
 
 function visible(value) {
@@ -111,15 +131,28 @@ for (const [name, api] of bundles) {
       }
     }
   }
-  assert.equal(
-    api.stringify(
-      api.parse('a { content: "/* text */"; }', {
-        stripCommentsInValues: false,
-      }),
-      { compress: true },
-    ),
-    'a{content:"/* text */";}',
-    name,
-  );
+  for (const [css, expected] of [
+    ['a { content: "/* text */"; }', 'a{content:"/* text */";}'],
+    ['a{color:/*keep*/red;}', 'a{color:/*keep*/red;}'],
+    ['a{color:/*keep*/red !important;}', 'a{color:/*keep*/red !important;}'],
+    ['a { color: red /* brand */ }', 'a{color:red /* brand */;}'],
+    ['a{color:/* ; } ( " */red;}', 'a{color:/* ; } ( " */red;}'],
+    ['a{color:red/* ; } ( " */}', 'a{color:red/* ; } ( " */;}'],
+    [
+      'a{color:var(--x, /* ) ; } */ red);}',
+      'a{color:var(--x, /* ) ; } */ red);}',
+    ],
+  ]) {
+    for (const silent of [false, true]) {
+      assert.equal(
+        api.stringify(
+          api.parse(css, { silent, stripCommentsInValues: false }),
+          { compress: true },
+        ),
+        expected,
+        name,
+      );
+    }
+  }
   console.log(`${name}: exports, ASTs, errors, formatting and option passed`);
 }
