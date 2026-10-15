@@ -85,6 +85,30 @@ const inputs = [
   '@foo\r\n \t',
   'a{}\r\n@foo\n',
   '\uFEFF@foo\n',
+  '@layer{a{color:red}}',
+  '@unknown x',
+  '@foo /*c*/ @bar',
+  '@layer a,b /*c*/',
+  '@charset "UTF-8" \n',
+  '@import "x" \n',
+  '@namespace url(x) \n',
+  'a{\\63 olor:red}',
+  '@keyframes x;',
+  '@-webkit-keyframes x;',
+  '@-moz-document url(x);',
+  '@page{@top-left;}',
+  '@page{@top-left;/*c*/}',
+  '@font-face{--x:{a:b}}',
+  '@font-face{color: /* } */red}b{}',
+  '@keyframes x{0%{--x:{a:b}}}',
+  '@media a{@foo /*c*/}',
+  '@media a{@foo /*c*/ @bar}',
+  '@page{@foo /*c*/}',
+  '@media a{@keyframes x;}b{c:d}',
+  'a{@-webkit-keyframes x; /*c*/ c:d;}b{c:d}',
+  '@supports (display:grid){@keyframes x junk; c:d;}b{c:d}',
+  '@layer a{@keyframes x c:/*keep*/d;}b{c:d}',
+  'a{@keyframes x /**/ c:d;}',
 ];
 
 function visible(value) {
@@ -168,6 +192,23 @@ for (const [name, api] of bundles) {
         name,
       );
     }
+  }
+  for (const value of ['/*keep*/red', 'red /*keep*/', '/* ; } */red']) {
+    const ast = api.parse(`@media a{@keyframes x color:${value};}`, {
+      silent: true,
+      stripCommentsInValues: false,
+    });
+    assert.equal(ast.stylesheet.parsingErrors.length, 1, name);
+    assert.equal(
+      ast.stylesheet.parsingErrors[0].reason,
+      "@keyframes missing '{'",
+      name,
+    );
+    assert.equal(
+      api.stringify(ast, { compress: true }),
+      `@media a{color:${value};}`,
+      name,
+    );
   }
   console.log(`${name}: exports, ASTs, errors, formatting and option passed`);
 }

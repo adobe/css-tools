@@ -18,7 +18,7 @@ default output. The returned AST remains a css-tools AST rather than a native
 PostCSS AST. The V4 parser is not used at runtime.
 
 Compatibility is verified for the tested corpus, not every CSS input. The
-[upstream recovery limitation](#known-issues-in-v5) is accepted for this final
+[upstream parser limitations](#known-issues-in-v5) are accepted for this final
 release and **will not be fixed** in css-tools.
 
 Using PostCSS directly is a separate migration: its API and AST differ from
@@ -153,24 +153,33 @@ For more examples, see the [Examples documentation](docs/EXAMPLES.md).
 V5's PostCSS-based parser was faster than the published V4.5.0 parser on these
 samples. Measurements used Benchmark.js with repeated warm, steady-state samples
 on Node.js 24.18.0 and an Apple M3 Max (macOS/arm64). ASTs and stringified outputs
-were checked for equality before timing.
+were checked for equality before timing. These measurements use PostCSS 8.5.30
+and include the final compatibility repairs.
 
 | CSS input | Size | V4.5.0 parse (ms) | V5 parse (ms) | V5 speedup |
 |---|---:|---:|---:|---:|
-| One rule | 20 bytes | 0.0058 | 0.0036 | 1.6x |
-| `benchmark/small.css` | 7.8 KB | 0.474 | 0.276 | 1.7x |
-| Pure.css 3.0.0 | 26.2 KB | 3.935 | 1.475 | 2.7x |
-| Bootstrap 5.3.3 | 281 KB | 612.7 | 18.5 | 33.2x |
+| One rule | 20 bytes | 0.0058 | 0.0042 | 1.4x |
+| `benchmark/small.css` | 7.8 KB | 0.499 | 0.314 | 1.6x |
+| Pure.css 3.0.0 | 26.2 KB | 4.101 | 1.556 | 2.6x |
+| Bootstrap 5.3.3 | 281 KB | 632.3 | 23.3 | 27.2x |
 
-For Bootstrap, parsing plus default stringification improved from **617.7 ms to
-18.6 ms**, about **33x faster**. Stringification alone was roughly unchanged;
-Bootstrap's formatted output was about 4% slower in V5.
+For Bootstrap, parsing plus default stringification improved from **637.9 ms to
+26.3 ms**, about **24x faster**. Stringification alone was broadly unchanged:
+Bootstrap took about 0.77 ms in V4 and 0.81 ms in V5.
 
-These are sample measurements, not guaranteed speedups. Results depend on the CSS,
-runtime, and hardware. Module loading, cold-start time, and memory usage were not
-measured. These measurements used an earlier V5 compatibility candidate with
-PostCSS 8.5.15, before the final dependency updates. See the `benchmark/` directory
-for the existing parser benchmark and its inputs.
+Warm throughput is not cold-start latency. A separate alternating-order,
+forced-GC batch run measured a 17-byte rule at 0.0060 ms in V4 and 0.0099 ms
+in V5. Median module loading, excluding process startup, was 0.80 ms for V4's
+CJS entry and 9.18 ms for V5's ESM entry across eleven fresh processes each.
+Fresh-process Bootstrap peak RSS was about 72.1 MiB in V4 and 96.3 MiB in V5,
+including module initialization, a live AST, and compressed stringification.
+The standalone UMD bundle grew from 20,942 to 94,070 bytes, or from 4,701 to
+27,525 bytes gzipped.
+
+These are sample measurements, not guaranteed speedups. Results depend on the
+CSS, warm-up, garbage collection, runtime, and hardware. See the `benchmark/`
+directory for the existing parser benchmark and its inputs, and
+[known issues](#known-issues-in-v5) for upstream adversarial-input costs.
 
 ## V4 Compatibility Tests
 
@@ -191,6 +200,10 @@ and 1,000 seeded generated inputs. It checks complete AST fields, source positio
 non-enumerable parent links, strict and silent errors, and byte-identical default,
 compressed, and custom-indent output. It also checks that V5 can stringify V4 ASTs.
 Bundle checks cover CJS, ESM, and standalone UMD browser, CommonJS, and AMD loading.
+Each loader also parses depth-2048 nested media in an isolated process with a
+128 MiB old-space limit and a five-second deadline, checking ASTs, positions, and
+parent descriptors without recursively walking the result. This gate covers
+parsing, not deep stringification.
 
 The public-CSS command samples eight complete stylesheets from ten pinned npm
 distribution URLs on jsDelivr, using seed `0x405000`. It verifies SHA-256 checksums
@@ -202,23 +215,30 @@ inputs exercise `source` and `silent` combinations. The published V4 parser is s
 on the full Bulma file, so this opt-in command can take several minutes.
 
 Passing these comparisons establishes exact parity for the tested inputs, not a
-proof of identical behavior for every possible CSS string.
+proof of identical behavior for every possible CSS string. Additional lexical
+and malformed-input probes have confirmed differences outside that corpus.
 
 ## Known Issues in V5
 
-**Upstream recovery resource exhaustion** is accepted and **will not be fixed**
-in css-tools. `postcss-safe-parser` recursively recovers long sequences without
-declaration semicolons, such as
+The following upstream resource limitations are accepted and **will not be fixed**
+in css-tools. They affect both strict and silent parsing.
+
+**Core PostCSS at-rule token handling** takes superlinear time on headers with
+many leading comments, such as `'@unknown ' + '/**/ '.repeat(n) + 'x;'`.
+PostCSS repeatedly removes tokens from the front of an array before the
+compatibility layer receives the AST. This is not regex backtracking.
+
+**Safe-parser recovery resource exhaustion** occurs when `postcss-safe-parser`
+recursively recovers long sequences without declaration semicolons, such as
 `'a {' + '\n color: red'.repeat(3100) + '\n}'`. This can overflow the stack or
-exhaust memory before the compatibility layer receives an AST, in both strict
-and silent modes. V4 accepts this input; the failure threshold depends on the
-runtime and resource limits. This limitation is in `postcss-safe-parser`, not
-core PostCSS or the css-tools compatibility layer.
+exhaust memory before the compatibility layer receives an AST. V4 accepts this
+input; the failure threshold depends on the runtime and resource limits. This
+recovery issue is separate from core PostCSS's token-handling cost.
 
 For untrusted CSS, `silent` is not an exception-safety or execution-time
 guarantee. Limit input size and isolate parsing in a worker or process with an
 enforceable timeout; an in-process timer cannot interrupt synchronous parsing.
-Applications relying on V4's behavior for this case should not treat V5 as a
+Applications relying on V4's behavior for these inputs should not treat V5 as a
 behaviorally identical upgrade.
 
 ## Documentation

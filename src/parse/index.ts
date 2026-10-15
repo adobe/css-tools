@@ -41,6 +41,8 @@ import {
 const commentRegex = /\/\*[^]*?(?:\*\/|$)/g;
 const propertyPrefixRegex = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/;
 const keyframesRegex = /^([-\w]+)?keyframes$/;
+const knownAtRuleRegex =
+  /^(?:import|charset|namespace|media|supports|container|host|font-face|page|property|counter-style|font-feature-values|scope|view-transition|position-try|starting-style)$/;
 const DECLARATION_ONLY_AT_RULES = new Set([
   'font-face',
   'page',
@@ -61,12 +63,42 @@ function trim(str: string): string {
   return str ? str.trim() : '';
 }
 
+function walkNodes(
+  root: postcss.Container,
+  visit: (node: postcss.ChildNode, index: number) => void,
+): void {
+  const pending: Array<{
+    container: postcss.Container;
+    index: number;
+    visited?: postcss.ChildNode;
+  }> = [{ container: root, index: 0 }];
+  while (pending.length) {
+    const frame = pending[pending.length - 1];
+    if (frame.visited) {
+      if (frame.container.nodes?.[frame.index] === frame.visited) frame.index++;
+      frame.visited = undefined;
+      continue;
+    }
+    const node = frame.container.nodes?.[frame.index];
+    if (!node) {
+      pending.pop();
+      continue;
+    }
+    visit(node, frame.index);
+    // Descendants can remove this node; advance only after their traversal.
+    frame.visited = node;
+    if ((node.type === 'rule' || node.type === 'atrule') && node.nodes) {
+      pending.push({ container: node, index: 0 });
+    }
+  }
+}
+
 function prepareCompatibilityInput(css: string): {
   css: string;
   ruleStarts: ReadonlySet<number>;
 } {
   const ruleStarts = new Set<number>();
-  if (!css.includes('--')) return { css, ruleStarts };
+  if (!css.includes('--') && !css.includes('@')) return { css, ruleStarts };
   const contexts: Array<{ nesting: boolean; keyframes: boolean }> = [];
   let nesting = true;
   let keyframes = false;
@@ -74,6 +106,18 @@ function prepareCompatibilityInput(css: string): {
   let brackets = 0;
   let quote = '';
   let start: number | undefined;
+  let colon = false;
+  let characters: string[] | undefined;
+
+  // Equal-length masking preserves V4 block classification and source offsets.
+  function mask(from: number, until: number): void {
+    characters ??= css.split('');
+    for (let offset = from; offset < until; offset++) {
+      if (css[offset] !== '\n' && css[offset] !== '\r') {
+        characters[offset] = ' ';
+      }
+    }
+  }
 
   for (let offset = 0; offset < css.length; offset++) {
     const char = css[offset];
@@ -92,7 +136,10 @@ function prepareCompatibilityInput(css: string): {
       offset = end + 1;
       continue;
     }
-    if (start === undefined && !/\s/.test(char)) start = offset;
+    if (start === undefined && !/\s/.test(char)) {
+      start = offset;
+      colon = false;
+    }
     if (char === '"' || char === "'") {
       quote = char;
       continue;
@@ -101,6 +148,18 @@ function prepareCompatibilityInput(css: string): {
     else if (char === ')') parentheses = Math.max(0, parentheses - 1);
     else if (char === '[') brackets++;
     else if (char === ']') brackets = Math.max(0, brackets - 1);
+    if (
+      char === ':' &&
+      !parentheses &&
+      start !== undefined &&
+      css[start] !== '@'
+    ) {
+      colon = true;
+    }
+    if (!parentheses && char === '{' && colon && !nesting && !keyframes) {
+      mask(offset, offset + 1);
+      continue;
+    }
     if (parentheses || brackets) continue;
 
     if (char === '{') {
@@ -110,6 +169,9 @@ function prepareCompatibilityInput(css: string): {
           : undefined;
       if (nesting && start !== undefined && css.startsWith('--', start)) {
         ruleStarts.add(start);
+        characters ??= css.split('');
+        characters[start] = '_';
+        characters[start + 1] = '_';
       }
       contexts.push({ nesting, keyframes });
       const blockKeyframes = name !== undefined && keyframesRegex.test(name);
@@ -126,20 +188,11 @@ function prepareCompatibilityInput(css: string): {
       nesting = context?.nesting ?? true;
       keyframes = context?.keyframes ?? false;
       start = undefined;
-    } else if (char === ';') start = undefined;
+    } else if (char === ';') {
+      start = undefined;
+    }
   }
-  if (!ruleStarts.size) return { css, ruleStarts };
-
-  // Mask only the custom-property prefix so PostCSS classifies V4 blocks as
-  // rules in one parse. Equal-length substitutions keep every source offset.
-  const parts: string[] = [];
-  let cursor = 0;
-  for (const start of ruleStarts) {
-    parts.push(css.slice(cursor, start), '__');
-    cursor = start + 2;
-  }
-  parts.push(css.slice(cursor));
-  return { css: parts.join(''), ruleStarts };
+  return { css: characters?.join('') ?? css, ruleStarts };
 }
 
 // Splits CSS into top-level rule/at-rule/statement segments for error detection.
@@ -282,6 +335,21 @@ function declarationValueEnd(value: string, preserveComments: boolean): number {
   return -1;
 }
 
+function blockPrelude(header: string): RegExpExecArray | null {
+  return (
+    /^@(?:media|supports|container) *([^{]+)/.exec(header) ??
+    /^@([-\w]+)?document *([^{]+)/.exec(header) ??
+    /^@font-feature-values\s+([^{]+)/.exec(header) ??
+    /^@scope\s*([^{]*)/.exec(header)
+  );
+}
+
+function atRuleErrorName(name: string): string {
+  if (keyframesRegex.test(name)) return 'keyframes';
+  if (/^([-\w]+)?document$/.test(name)) return 'document';
+  return name;
+}
+
 // Restore V4 boundaries and raw fields from the unmodified input.
 function restoreCompatibilitySpans(
   root: postcss.Root,
@@ -294,9 +362,14 @@ function restoreCompatibilitySpans(
     const children = container.nodes;
     const retained: postcss.ChildNode[] = [];
     let consumedEnd = -1;
+    let closedAt: number | undefined;
     for (const node of children) {
       const start = node.source?.start?.offset;
-      if (start !== undefined && start < consumedEnd) continue;
+      if (
+        start !== undefined &&
+        (start < consumedEnd || (closedAt !== undefined && start >= closedAt))
+      )
+        continue;
       retained.push(node);
       if (node.type !== 'decl' || start === undefined || !node.source) continue;
       const property = propertyPrefixRegex.exec(source.css.slice(start));
@@ -333,23 +406,52 @@ function restoreCompatibilitySpans(
         ...source.pointAt(consumedEnd),
         offset: consumedEnd + 1,
       };
+      if (
+        (container.type === 'rule' || container.type === 'atrule') &&
+        container.source &&
+        source.css[consumedEnd] === '}' &&
+        consumedEnd + 1 < (container.source.end?.offset ?? source.css.length)
+      ) {
+        closedAt = consumedEnd;
+        container.source.end = { ...node.source.end };
+        container.raws.semicolon = false;
+      }
     }
     if (retained.length !== children.length) {
       container.removeAll();
       container.append(retained);
     }
+    const last = container.last;
+    if (
+      (last?.type === 'rule' || last?.type === 'atrule') &&
+      last.source?.end?.offset !== undefined &&
+      container.type !== 'root' &&
+      container.source
+    ) {
+      let cursor = last.source.end.offset;
+      while (/\s/.test(source.css[cursor] ?? '')) cursor++;
+      if (
+        source.css[cursor] === '}' &&
+        cursor + 1 < (container.source.end?.offset ?? source.css.length)
+      ) {
+        container.source.end = {
+          ...source.pointAt(cursor),
+          offset: cursor + 1,
+        };
+      }
+    }
   }
 
-  restoreContainer(root);
-  root.walk((node) => {
+  const containers: postcss.Container[] = [root];
+  walkNodes(root, (node, index) => {
     const start = node.source?.start?.offset;
-    if (node.type === 'rule' && start !== undefined && ruleStarts.has(start)) {
+    if (node.type === 'rule' && start !== undefined) {
       const selector = node.raws.selector?.raw ?? node.selector;
       node.selector = source.css.slice(start, start + selector.length);
       delete node.raws.selector;
       const suffix = node.raws.ownSemicolon;
       const end = node.source?.end?.offset;
-      if (suffix && end !== undefined && node.source) {
+      if (ruleStarts.has(start) && suffix && end !== undefined && node.source) {
         const offset = end - suffix.length;
         node.source.end = {
           ...source.pointAt(offset - 1),
@@ -357,21 +459,148 @@ function restoreCompatibilitySpans(
         };
         delete node.raws.ownSemicolon;
       }
-    } else if (
-      node.type === 'atrule' &&
-      !node.nodes &&
-      node.source?.start &&
-      !node.source.end
-    ) {
-      const end = source.pointAt(source.css.length);
-      node.source.end = {
-        line: end.line,
-        column: end.column - 1,
-        offset: source.css.length,
-      };
+    } else if (node.type === 'atrule' && start !== undefined && node.source) {
+      let parsedEnd = node.source.end?.offset;
+      let semicolon =
+        parsedEnd !== undefined && source.css[parsedEnd - 1] === ';';
+      const prelude =
+        !node.nodes && semicolon ? blockPrelude(source.css.slice(start)) : null;
+      const siblings = node.parent?.nodes;
+      if (prelude && siblings && node.parent) {
+        const cursor = start + prelude[0].length;
+        const bodyIndex = siblings.findIndex(
+          (sibling, siblingIndex) =>
+            siblingIndex > index &&
+            (sibling.type === 'rule' || sibling.type === 'atrule') &&
+            blockOpeningOffset(sibling) === cursor,
+        );
+        const body = siblings[bodyIndex];
+        if (body?.type === 'rule' || body?.type === 'atrule') {
+          const children = [...(body.nodes ?? [])];
+          body.removeAll();
+          node.nodes = [];
+          node.append(children);
+          node.source.end = body.source?.end;
+          node.raws.semicolon = body.raws.semicolon;
+          node.raws.afterName = '';
+          node.params = source.css.slice(start + node.name.length + 1, cursor);
+          node.raws.between = '';
+          delete node.raws.params;
+          const retained = [
+            ...siblings.slice(0, index + 1),
+            ...siblings.slice(bodyIndex + 1),
+          ];
+          const parent = node.parent;
+          parent.removeAll();
+          parent.append(retained);
+          parsedEnd = node.source.end?.offset;
+          semicolon = false;
+        }
+      }
+      const open = blockOpeningOffset(node);
+      const parentEnd =
+        node.parent?.type === 'root'
+          ? source.css.length
+          : (node.parent?.source?.end?.offset ?? source.css.length) - 1;
+      const end =
+        open ??
+        (semicolon && parsedEnd !== undefined ? parsedEnd - 1 : parentEnd);
+      let paramsStart = start + node.name.length + 1;
+      while (paramsStart < end && /\s/.test(source.css[paramsStart]))
+        paramsStart++;
+      let paramsEnd = end;
+      while (paramsEnd > paramsStart && /\s/.test(source.css[paramsEnd - 1]))
+        paramsEnd--;
+      node.raws.afterName = source.css.slice(
+        start + node.name.length + 1,
+        paramsStart,
+      );
+      node.params = source.css.slice(paramsStart, paramsEnd);
+      node.raws.between = source.css.slice(paramsEnd, end);
+      delete node.raws.params;
+
+      if (!node.nodes && !semicolon) {
+        const name = node.name.endsWith(':')
+          ? node.name.slice(0, -1)
+          : node.name;
+        const known =
+          knownAtRuleRegex.test(name) ||
+          keyframesRegex.test(node.name) ||
+          /^([-\w]+)?document$/.test(node.name) ||
+          PAGE_MARGIN_BOX_NAMES.has(node.name) ||
+          (node.name === 'layer' &&
+            /^@layer *([^{;@]+)/.test(source.css.slice(start, end)));
+        const cursor = known ? end : paramsStart;
+        if (!known) {
+          node.params = '';
+          node.raws.between = '';
+        }
+        const point = source.pointAt(cursor);
+        node.source.end = {
+          line: point.line,
+          column: point.column - 1,
+          offset: cursor,
+        };
+      }
     }
-    if (node.type === 'rule' || node.type === 'atrule') restoreContainer(node);
+    if (node.type === 'rule' || node.type === 'atrule') containers.push(node);
   });
+  for (let index = containers.length - 1; index >= 0; index--) {
+    restoreContainer(containers[index]);
+  }
+}
+
+function commentAt(
+  root: postcss.Root,
+  source: CompatibilitySource,
+  start: number,
+  end: number,
+): postcss.Comment {
+  const closed = source.css.slice(end - 2, end) === '*/';
+  const comment = postcss.comment({
+    text: source.css.slice(start + 2, closed ? end - 2 : end),
+  });
+  if (root.source) {
+    comment.source = {
+      input: root.source.input,
+      start: { ...source.pointAt(start), offset: start },
+      end: { ...source.pointAt(end - 1), offset: end },
+    };
+  }
+  return comment;
+}
+
+function genericStatementAt(
+  root: postcss.Root,
+  source: CompatibilitySource,
+  start: number,
+  until: number,
+): postcss.AtRule | undefined {
+  const keyword = /^@([-\w]+)\s*/.exec(source.css.slice(start, until));
+  const name = keyword?.[1];
+  if (
+    !keyword ||
+    !name ||
+    knownAtRuleRegex.test(name) ||
+    name === 'layer' ||
+    name === 'custom-media' ||
+    keyframesRegex.test(name) ||
+    /^([-\w]+)?document$/.test(name) ||
+    PAGE_MARGIN_BOX_NAMES.has(name)
+  )
+    return;
+  const end = start + keyword[0].length;
+  const point = source.pointAt(end);
+  const statement = postcss.atRule({ name, params: '' });
+  statement.raws.afterName = keyword[0].slice(name.length + 1);
+  if (root.source) {
+    statement.source = {
+      input: root.source.input,
+      start: { ...source.pointAt(start), offset: start },
+      end: { line: point.line, column: point.column - 1, offset: end },
+    };
+  }
+  return statement;
 }
 
 function blockOpeningOffset(
@@ -388,15 +617,132 @@ function blockOpeningOffset(
   return start + header.length;
 }
 
+function recoveryRule(
+  node: postcss.Rule | postcss.AtRule,
+  source: CompatibilitySource,
+  start: number,
+  open: number,
+): postcss.Rule {
+  const rule = postcss.rule({
+    selector: source.css.slice(start, open),
+    nodes: node.nodes,
+    source: node.source,
+  });
+  rule.raws.between = '';
+  rule.raws.semicolon = node.raws.semicolon;
+  if (node.source) {
+    rule.source = {
+      ...node.source,
+      start: { ...source.pointAt(start), offset: start },
+    };
+  }
+  return rule;
+}
+
+function recoverRootText(
+  root: postcss.Root,
+  source: CompatibilitySource,
+  errors: CssParseError[],
+  from: number,
+  until: number,
+): void {
+  const { css } = source;
+  for (let offset = from; offset < until; offset++) {
+    if (/\s/.test(css[offset])) continue;
+    if (css.startsWith('/*', offset)) {
+      const close = css.indexOf('*/', offset + 2);
+      if (close !== -1) {
+        root.append(commentAt(root, source, offset, close + 2));
+        offset = close + 1;
+        continue;
+      }
+      errors.push(source.error('End of comment missing', offset));
+    }
+    errors.push(
+      source.error(
+        css[offset] === '}' ? "extra '}'" : 'selector missing',
+        offset,
+      ),
+    );
+  }
+}
+
+function recoverBodyText(
+  root: postcss.Root,
+  parent: postcss.Container,
+  source: CompatibilitySource,
+  errors: CssParseError[],
+  from: number,
+  until: number,
+  preserveComments: boolean,
+): void {
+  const { css } = source;
+  let cursor = from;
+  // V4 attempts a declaration after a failed at-rule, even at a comment.
+  while (cursor < until) {
+    while (cursor < until && /[;\s]/.test(css[cursor])) cursor++;
+    if (cursor >= until) break;
+    const start = cursor;
+    const property = propertyPrefixRegex.exec(css.slice(cursor, until));
+    if (property) {
+      cursor += property[0].length;
+      if (css[cursor] === ':') {
+        cursor++;
+        while (cursor < until && /\s/.test(css[cursor])) cursor++;
+        const valueStart = cursor;
+        const relativeEnd = declarationValueEnd(
+          css.slice(valueStart, until + Number(css[until] === '}')),
+          preserveComments,
+        );
+        if (relativeEnd !== -1) cursor += relativeEnd;
+        const declaration = postcss.decl({
+          prop: property[1],
+          value: trim(css.slice(valueStart, cursor)),
+        });
+        declaration.raws.between = css.slice(
+          start + property[1].length,
+          valueStart,
+        );
+        if (root.source) {
+          declaration.source = {
+            input: root.source.input,
+            start: { ...source.pointAt(start), offset: start },
+            end: { ...source.pointAt(cursor), offset: cursor + 1 },
+          };
+        }
+        parent.append(declaration);
+        continue;
+      }
+      errors.push(source.error("property missing ':'", cursor));
+    }
+    const semicolon = css.indexOf(';', cursor);
+    const close = css.indexOf('}', cursor);
+    if (
+      semicolon === -1 ||
+      semicolon >= until ||
+      (close !== -1 && close < semicolon)
+    )
+      break;
+    cursor = semicolon + 1;
+  }
+  parent.nodes?.sort(
+    (a, b) => (a.source?.start?.offset ?? 0) - (b.source?.start?.offset ?? 0),
+  );
+}
+
 function collectCompatibilityErrors(
   source: CompatibilitySource,
   root: postcss.Root,
   silent: boolean,
+  boundaryCSS: string,
   syntaxError?: postcss.CssSyntaxError,
 ): CssParseError[] {
   const { css } = source;
   const errors: CssParseError[] = [];
-  const segments = splitTopLevelSegments(css);
+  const segments = splitTopLevelSegments(boundaryCSS).map((segment) => ({
+    ...segment,
+    text: css.slice(segment.offset, segment.offset + segment.text.length),
+  }));
   for (const segment of segments) {
     if (segment.text === '}')
       errors.push(source.error("extra '}'", segment.offset));
@@ -428,6 +774,22 @@ function collectCompatibilityErrors(
 
   function recordRootGap(from: number, until: number): void {
     for (let offset = from; offset < until; offset++) {
+      if (css.startsWith('/*', offset)) {
+        const close = css.indexOf('*/', offset + 2);
+        const end = close === -1 ? until : close + 2;
+        retainedRoots.push(commentAt(root, source, offset, end));
+        offset = end - 1;
+        continue;
+      }
+      if (css[offset] === '@') {
+        const statement = genericStatementAt(root, source, offset, until);
+        if (statement) {
+          retainedRoots.push(statement);
+          offset = statement.source?.end?.offset ?? offset + 1;
+          offset--;
+          continue;
+        }
+      }
       if (!/\s/.test(css[offset]) && css[offset] !== '}') {
         errors.push(source.error('selector missing', offset));
         if (!silent) return;
@@ -486,7 +848,7 @@ function collectCompatibilityErrors(
     root.append(retainedRoots);
   }
 
-  root.walk((container, index) => {
+  walkNodes(root, (container, index) => {
     if (
       (container.type !== 'rule' && container.type !== 'atrule') ||
       !container.nodes
@@ -504,7 +866,7 @@ function collectCompatibilityErrors(
       errors.push(
         source.error(
           container.type === 'atrule'
-            ? `@${container.name} missing '}'`
+            ? `@${atRuleErrorName(container.name)} missing '}'`
             : "missing '}'",
           offset,
         ),
@@ -532,16 +894,7 @@ function collectCompatibilityErrors(
           next.source.start = { ...source.pointAt(offset), offset };
           return;
         }
-        for (let cursor = offset; cursor < end; cursor++) {
-          if (!/\s/.test(css[cursor])) {
-            errors.push(
-              source.error(
-                css[cursor] === '}' ? "extra '}'" : 'selector missing',
-                cursor,
-              ),
-            );
-          }
-        }
+        recoverRootText(root, source, errors, offset, end);
       }
     }
 
@@ -549,6 +902,22 @@ function collectCompatibilityErrors(
       while (cursor < until) {
         while (cursor < until && /\s/.test(css[cursor])) cursor++;
         if (cursor >= until) break;
+        if (css.startsWith('/*', cursor)) {
+          const close = css.indexOf('*/', cursor + 2);
+          if (close !== -1 && close + 2 <= until) {
+            retained.push(commentAt(root, source, cursor, close + 2));
+            cursor = close + 2;
+            continue;
+          }
+        }
+        if (css[cursor] === '@') {
+          const statement = genericStatementAt(root, source, cursor, until);
+          if (statement) {
+            retained.push(statement);
+            cursor = statement.source?.end?.offset ?? cursor + 1;
+            continue;
+          }
+        }
         const property = propertyPrefixRegex.exec(css.slice(cursor));
         if (property && css[cursor + property[0].length] === ':') break;
         if (property) {
@@ -586,6 +955,12 @@ function collectCompatibilityErrors(
         continue;
       }
       cursor = scanGap(cursor, childStart);
+      if (child.type === 'decl' && cursor <= childStart) {
+        cursor = scanGap(
+          childStart,
+          Math.min(child.source?.end?.offset ?? limit, limit),
+        );
+      }
       if (childStart < cursor) continue;
       retained.push(child);
       cursor = Math.min(child.source?.end?.offset ?? limit, limit);
@@ -595,6 +970,15 @@ function collectCompatibilityErrors(
           (child.type === 'decl' && css[cursor] === ';'))
       )
         cursor++;
+    }
+    if (
+      container.type === 'atrule' &&
+      keyframesRegex.test(container.name) &&
+      cursor < limit
+    ) {
+      stopAt(cursor);
+      container.remove();
+      return;
     }
     scanGap(cursor, limit);
     if (retained.length !== children.length) {
@@ -610,10 +994,12 @@ function recoverCompatibility(
   source: CompatibilitySource,
   errors: CssParseError[],
   silent: boolean,
+  preserveComments: boolean,
 ): void {
   const { css } = source;
   const recoveryEnds = new Map<postcss.Container, number>();
-  root.walkComments((node) => {
+  walkNodes(root, (node) => {
+    if (node.type !== 'comment') return;
     const start = node.source?.start?.offset ?? 0;
     if (css.startsWith('/*', start) && css.indexOf('*/', start + 2) === -1) {
       errors.push(source.error('End of comment missing', start));
@@ -635,7 +1021,7 @@ function recoverCompatibility(
       }
     }
   });
-  root.walk((node) => {
+  walkNodes(root, (node) => {
     const start = node.source?.start?.offset ?? 0;
     if (node.type === 'rule' && !node.selector.trim()) {
       node.remove();
@@ -689,7 +1075,9 @@ function recoverCompatibility(
       }
       errors.push(
         source.error(
-          node.type === 'atrule' ? `@${node.name} missing '}'` : "missing '}'",
+          node.type === 'atrule'
+            ? `@${atRuleErrorName(node.name)} missing '}'`
+            : "missing '}'",
           cursor,
         ),
       );
@@ -705,43 +1093,151 @@ function recoverCompatibility(
         column: end.column - 1,
         offset: cursor,
       };
-    } else if (
-      node.type === 'atrule' &&
-      ((!node.nodes &&
-        /^(?:media|supports|container|host|document|font-face|page|property|counter-style|font-feature-values|scope|view-transition|position-try|starting-style)$/.test(
-          node.name,
-        )) ||
-        (keyframesRegex.test(node.name) && !node.params.trim()))
-    ) {
-      const missingName = /keyframes$/.test(node.name) && !node.params.trim();
-      const cursor = missingName
-        ? start + node.name.length + 1 + (node.raws.between?.length ?? 0)
-        : (node.source?.end?.offset ?? css.length);
-      errors.push(
-        source.error(
-          missingName ? '@keyframes missing name' : `@${node.name} missing '{'`,
-          cursor,
-        ),
-      );
-      node.remove();
-      if (silent) {
-        if (cursor === css.length) {
-          errors.push(source.error('selector missing', cursor));
-        } else {
-          for (let offset = cursor; offset < css.length; offset++) {
-            if (!/\s/.test(css[offset])) {
-              errors.push(
-                source.error(
-                  css[offset] === '}' ? "extra '}'" : 'selector missing',
-                  offset,
-                ),
-              );
-            }
+    } else if (node.type === 'atrule') {
+      const header = css.slice(start);
+      let cursor: number | undefined;
+      let reason = `@${node.name} missing '{'`;
+      if (keyframesRegex.test(node.name)) {
+        const keyword = /^@([-\w]+)?keyframes\s*/.exec(header);
+        const identifier =
+          keyword && /^([-\w]+)\s*/.exec(header.slice(keyword[0].length));
+        if (keyword && !identifier) {
+          cursor = start + keyword[0].length;
+          reason = '@keyframes missing name';
+        } else if (keyword && identifier && !node.nodes) {
+          cursor = start + keyword[0].length + identifier[0].length;
+          reason = "@keyframes missing '{'";
+        }
+      } else if (!node.nodes) {
+        const prelude = blockPrelude(header);
+        const named =
+          /^@(?:property|position-try)\s+(--[-\w]+)\s*/.exec(header) ??
+          /^@counter-style\s+([-\w]+)\s*/.exec(header);
+        const keyword =
+          /^(?:host|font-face|view-transition|starting-style)$/.test(
+            node.name,
+          ) || PAGE_MARGIN_BOX_NAMES.has(node.name)
+            ? /^@[-\w]+\s*/.exec(header)
+            : node.name === 'page'
+              ? /^@page */.exec(header)
+              : null;
+        const matched = prelude ?? named ?? keyword;
+        if (matched) {
+          cursor = start + matched[0].length;
+          if (/^([-\w]+)?document$/.test(node.name)) {
+            reason = "@document missing '{'";
           }
+        }
+      }
+      if (cursor === undefined) return;
+      errors.push(source.error(reason, cursor));
+      const parent = node.parent;
+      const page =
+        parent?.type === 'atrule' &&
+        parent.name === 'page' &&
+        parent.parent?.type === 'root'
+          ? parent
+          : undefined;
+      const pageEnd = page?.source?.end?.offset;
+      const parentEnd = parent?.source?.end?.offset ?? css.length;
+      const recoveryEnd = Math.min(
+        node.source?.end?.offset ?? parentEnd,
+        parentEnd - Number(css[parentEnd - 1] === '}'),
+      );
+      const remaining = page?.nodes
+        ?.slice((page.nodes?.indexOf(node) ?? -1) + 1)
+        .filter((child) => child.type !== 'decl');
+      node.remove();
+      if (parent?.type === 'atrule' && parent.name === 'page') {
+        errors.push(source.error("@page missing '}'", cursor));
+        if (page && remaining) {
+          page.removeAll();
+          root.insertBefore(page, remaining);
+        }
+        parent.remove();
+      }
+      if (silent) {
+        if (parent?.type === 'root' || page) {
+          const nextBlock = root.nodes.find(
+            (child) =>
+              (child.source?.start?.offset ?? -1) >= cursor &&
+              (child.type === 'rule' || child.type === 'atrule') &&
+              child.nodes,
+          );
+          const open =
+            nextBlock?.type === 'rule' || nextBlock?.type === 'atrule'
+              ? blockOpeningOffset(nextBlock)
+              : undefined;
+          if (
+            open !== undefined &&
+            css[cursor] !== '{' &&
+            (nextBlock?.type === 'rule' || nextBlock?.type === 'atrule')
+          ) {
+            const start = nextBlock.source?.start?.offset ?? cursor;
+            const retained = root.nodes.filter(
+              (child) =>
+                child === nextBlock ||
+                (child.source?.start?.offset ?? -1) < cursor ||
+                (child.source?.start?.offset ?? -1) >= start,
+            );
+            root.removeAll();
+            root.append(retained);
+            nextBlock.replaceWith(
+              recoveryRule(nextBlock, source, cursor, open),
+            );
+            const last = remaining?.[remaining.length - 1];
+            const after = last?.source?.end?.offset;
+            if (
+              after !== undefined &&
+              pageEnd !== undefined &&
+              start < pageEnd &&
+              after < pageEnd
+            ) {
+              recoverRootText(root, source, errors, after, pageEnd);
+            }
+            return;
+          }
+          const next = root.nodes.find(
+            (child) => (child.source?.start?.offset ?? -1) >= cursor,
+          );
+          const until = next?.source?.start?.offset ?? css.length;
+          if (css[cursor] === '}') {
+            errors.push(source.error('selector missing', cursor));
+          }
+          recoverRootText(
+            root,
+            source,
+            errors,
+            cursor + Number(css[cursor] === '}'),
+            until,
+          );
+          const last = remaining?.[remaining.length - 1];
+          const after = last?.source?.end?.offset;
+          if (after !== undefined && pageEnd !== undefined && after < pageEnd) {
+            recoverRootText(root, source, errors, after, pageEnd);
+          }
+          if (cursor === css.length) {
+            errors.push(source.error('selector missing', cursor));
+          }
+          return;
+        }
+        if (parent) {
+          recoverBodyText(
+            root,
+            parent,
+            source,
+            errors,
+            cursor,
+            recoveryEnd,
+            preserveComments,
+          );
         }
       }
     }
   });
+  root.nodes.sort(
+    (a, b) => (a.source?.start?.offset ?? 0) - (b.source?.start?.offset ?? 0),
+  );
   errors.sort(
     (a, b) =>
       a.line - b.line ||
@@ -842,13 +1338,22 @@ function convertDeclaration(
   };
 }
 
-function convertRule(node: postcss.Rule, sourceName: string): CssRuleAST {
+type ConvertedNodes = WeakMap<
+  postcss.ChildNode,
+  CssAtRuleAST | CssDeclarationAST
+>;
+
+function convertRule(
+  node: postcss.Rule,
+  sourceName: string,
+  convertedNodes: ConvertedNodes,
+): CssRuleAST {
   const selectors = convertSelectors(node.selector);
   const declarations: Array<CssDeclarationAST | CssCommentAST | CssAtRuleAST> =
     [];
 
   for (const child of node.nodes ?? []) {
-    const converted = convertChildNode(child, sourceName);
+    const converted = convertedNodes.get(child);
     if (converted)
       declarations.push(
         converted as CssDeclarationAST | CssCommentAST | CssAtRuleAST,
@@ -866,17 +1371,18 @@ function convertRule(node: postcss.Rule, sourceName: string): CssRuleAST {
 function convertKeyframe(
   node: postcss.Rule,
   sourceName: string,
+  convertedNodes: ConvertedNodes,
 ): CssKeyframeAST {
   const values = node.selector.split(',').map((v) => trim(v));
   const declarations: Array<CssDeclarationAST | CssCommentAST> = [];
 
   for (const child of node.nodes ?? []) {
-    if (child.type === 'decl') {
-      declarations.push(
-        convertDeclaration(child as postcss.Declaration, sourceName),
-      );
-    } else if (child.type === 'comment') {
-      declarations.push(convertComment(child as postcss.Comment, sourceName));
+    const converted = convertedNodes.get(child);
+    if (
+      converted?.type === CssTypes.declaration ||
+      converted?.type === CssTypes.comment
+    ) {
+      declarations.push(converted);
     }
   }
 
@@ -912,6 +1418,7 @@ function convertKeyframes(
   nameLower: string,
   params: string,
   sourceName: string,
+  convertedNodes: ConvertedNodes,
 ): CssKeyframesAST {
   const vendorMatch = keyframesRegex.exec(nameLower);
   const vendor = vendorMatch?.[1] || undefined;
@@ -919,9 +1426,10 @@ function convertKeyframes(
   const keyframes: Array<CssKeyframeAST | CssCommentAST> = [];
   for (const child of node.nodes ?? []) {
     if (child.type === 'comment') {
-      keyframes.push(convertComment(child as postcss.Comment, sourceName));
+      const converted = convertedNodes.get(child);
+      if (converted?.type === CssTypes.comment) keyframes.push(converted);
     } else if (child.type === 'rule') {
-      keyframes.push(convertKeyframe(child as postcss.Rule, sourceName));
+      keyframes.push(convertKeyframe(child, sourceName, convertedNodes));
     }
   }
 
@@ -936,11 +1444,11 @@ function convertKeyframes(
 
 function convertBlockNodes(
   nodes: postcss.ChildNode[],
-  sourceName: string,
+  convertedNodes: ConvertedNodes,
 ): Array<CssAtRuleAST | CssDeclarationAST> {
   const result: Array<CssAtRuleAST | CssDeclarationAST> = [];
   for (const child of nodes) {
-    const converted = convertChildNode(child, sourceName);
+    const converted = convertedNodes.get(child);
     if (converted) result.push(converted as CssAtRuleAST | CssDeclarationAST);
   }
   return result;
@@ -948,20 +1456,26 @@ function convertBlockNodes(
 
 function convertDeclNodes(
   nodes: postcss.ChildNode[],
-  sourceName: string,
+  convertedNodes: ConvertedNodes,
 ): Array<CssDeclarationAST | CssCommentAST> {
   const result: Array<CssDeclarationAST | CssCommentAST> = [];
   for (const child of nodes) {
-    if (child.type === 'decl') {
-      result.push(convertDeclaration(child as postcss.Declaration, sourceName));
-    } else if (child.type === 'comment') {
-      result.push(convertComment(child as postcss.Comment, sourceName));
+    const converted = convertedNodes.get(child);
+    if (
+      converted?.type === CssTypes.declaration ||
+      converted?.type === CssTypes.comment
+    ) {
+      result.push(converted);
     }
   }
   return result;
 }
 
-function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
+function convertAtRule(
+  node: postcss.AtRule,
+  sourceName: string,
+  convertedNodes: ConvertedNodes,
+): CssAtRuleAST {
   let nameLower = node.name;
   let params = trim(
     (node.raws.afterName ?? '') +
@@ -977,35 +1491,48 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
   }
 
   if (keyframesRegex.test(nameLower)) {
-    return convertKeyframes(node, nameLower, params, sourceName);
+    return convertKeyframes(
+      node,
+      nameLower,
+      params,
+      sourceName,
+      convertedNodes,
+    );
   }
+  const hasPrelude = Boolean(
+    params || node.raws.afterName || node.raws.between,
+  );
 
   switch (nameLower) {
     case 'media':
+      if (!hasPrelude) break;
       return {
         type: CssTypes.media,
         media: params,
-        rules: convertBlockNodes(node.nodes ?? [], sourceName),
+        rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssMediaAST;
 
     case 'supports':
+      if (!hasPrelude) break;
       return {
         type: CssTypes.supports,
         supports: params,
-        rules: convertBlockNodes(node.nodes ?? [], sourceName),
+        rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssSupportsAST;
 
     case 'container':
+      if (!hasPrelude) break;
       return {
         type: CssTypes.container,
         container: params,
-        rules: convertBlockNodes(node.nodes ?? [], sourceName),
+        rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssContainerAST;
 
     case 'import':
+      if (!hasPrelude) break;
       return {
         type: CssTypes.import,
         import: params,
@@ -1013,6 +1540,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       } as CssImportAST;
 
     case 'charset':
+      if (!hasPrelude) break;
       return {
         type: CssTypes.charset,
         charset: params,
@@ -1020,6 +1548,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       } as CssCharsetAST;
 
     case 'namespace':
+      if (!hasPrelude) break;
       return {
         type: CssTypes.namespace,
         namespace: params,
@@ -1027,6 +1556,12 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       } as CssNamespaceAST;
 
     case 'custom-media': {
+      if (
+        !/^--\S+\s+[^{;\s][^{;]*$/.test(params) ||
+        node.source?.end?.offset === undefined ||
+        node.source.input.css[node.source.end.offset - 1] !== ';'
+      )
+        break;
       const spaceIdx = params.search(/\s/);
       return {
         type: CssTypes.customMedia,
@@ -1039,7 +1574,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
     case 'font-face':
       return {
         type: CssTypes.fontFace,
-        declarations: convertDeclNodes(node.nodes ?? [], sourceName),
+        declarations: convertDeclNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssFontFaceAST;
 
@@ -1047,18 +1582,19 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       return {
         type: CssTypes.fontFeatureValues,
         fontFamily: params,
-        rules: convertBlockNodes(node.nodes ?? [], sourceName),
+        rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssFontFeatureValuesAST;
 
     case 'host':
       return {
         type: CssTypes.host,
-        rules: convertBlockNodes(node.nodes ?? [], sourceName),
+        rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssHostAST;
 
     case 'layer': {
+      if (!hasPrelude) break;
       if (!node.nodes) {
         return {
           type: CssTypes.layer,
@@ -1069,7 +1605,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       return {
         type: CssTypes.layer,
         layer: params,
-        rules: convertBlockNodes(node.nodes, sourceName),
+        rules: convertBlockNodes(node.nodes, convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssLayerAST;
     }
@@ -1080,16 +1616,13 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
         CssDeclarationAST | CssCommentAST | CssAtRuleAST
       > = [];
       for (const child of node.nodes ?? []) {
-        if (child.type === 'decl') {
-          declarations.push(
-            convertDeclaration(child as postcss.Declaration, sourceName),
-          );
-        } else if (child.type === 'comment') {
-          declarations.push(
-            convertComment(child as postcss.Comment, sourceName),
-          );
-        } else if (child.type === 'atrule') {
-          declarations.push(convertAtRule(child as postcss.AtRule, sourceName));
+        if (
+          child.type === 'decl' ||
+          child.type === 'comment' ||
+          child.type === 'atrule'
+        ) {
+          const converted = convertedNodes.get(child);
+          if (converted) declarations.push(converted);
         }
       }
       return {
@@ -1104,7 +1637,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       return {
         type: CssTypes.property,
         name: params,
-        declarations: convertDeclNodes(node.nodes ?? [], sourceName),
+        declarations: convertDeclNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssPropertyAST;
 
@@ -1112,7 +1645,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       return {
         type: CssTypes.counterStyle,
         name: params,
-        declarations: convertDeclNodes(node.nodes ?? [], sourceName),
+        declarations: convertDeclNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssCounterStyleAST;
 
@@ -1120,21 +1653,21 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       return {
         type: CssTypes.scope,
         scope: params,
-        rules: convertBlockNodes(node.nodes ?? [], sourceName),
+        rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssScopeAST;
 
     case 'starting-style':
       return {
         type: CssTypes.startingStyle,
-        rules: convertBlockNodes(node.nodes ?? [], sourceName),
+        rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssStartingStyleAST;
 
     case 'view-transition':
       return {
         type: CssTypes.viewTransition,
-        declarations: convertDeclNodes(node.nodes ?? [], sourceName),
+        declarations: convertDeclNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssViewTransitionAST;
 
@@ -1142,13 +1675,13 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       return {
         type: CssTypes.positionTry,
         name: params,
-        declarations: convertDeclNodes(node.nodes ?? [], sourceName),
+        declarations: convertDeclNodes(node.nodes ?? [], convertedNodes),
         position: convertPos(node.source, sourceName),
       } as CssPositionTryAST;
   }
 
   // Document with optional vendor prefix (@-moz-document, @document)
-  if (/^([-\w]+)?document$/.test(nameLower)) {
+  if (hasPrelude && /^([-\w]+)?document$/.test(nameLower)) {
     const vendorMatch = /^([-\w]+)?document$/.exec(nameLower);
     // v4 used "" (empty string) when no vendor prefix, not undefined
     const vendor = vendorMatch?.[1] ?? '';
@@ -1156,7 +1689,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
       type: CssTypes.document,
       document: params,
       vendor,
-      rules: convertBlockNodes(node.nodes ?? [], sourceName),
+      rules: convertBlockNodes(node.nodes ?? [], convertedNodes),
       position: convertPos(node.source, sourceName),
     } as CssDocumentAST;
   }
@@ -1166,7 +1699,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
     return {
       type: CssTypes.pageMarginBox,
       name: nameLower,
-      declarations: convertDeclNodes(node.nodes ?? [], sourceName),
+      declarations: convertDeclNodes(node.nodes ?? [], convertedNodes),
       position: convertPos(node.source, sourceName),
     } as CssPageMarginBoxAST;
   }
@@ -1184,7 +1717,7 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
     type: CssTypes.atRule,
     name: node.name,
     prelude: params,
-    rules: convertBlockNodes(node.nodes, sourceName),
+    rules: convertBlockNodes(node.nodes, convertedNodes),
     position: convertPos(node.source, sourceName),
   } as CssGenericAtRuleAST;
 }
@@ -1192,12 +1725,13 @@ function convertAtRule(node: postcss.AtRule, sourceName: string): CssAtRuleAST {
 function convertChildNode(
   child: postcss.ChildNode,
   sourceName: string,
+  convertedNodes: ConvertedNodes,
 ): CssAtRuleAST | CssDeclarationAST | undefined {
   switch (child.type) {
     case 'rule':
-      return convertRule(child as postcss.Rule, sourceName);
+      return convertRule(child, sourceName, convertedNodes);
     case 'atrule':
-      return convertAtRule(child as postcss.AtRule, sourceName);
+      return convertAtRule(child, sourceName, convertedNodes);
     case 'decl':
       return convertDeclaration(child as postcss.Declaration, sourceName);
     case 'comment':
@@ -1208,29 +1742,29 @@ function convertChildNode(
 }
 
 function addParent<T extends { type?: string }>(obj: T, parent?: unknown): T {
-  const isNode = obj && typeof obj.type === 'string';
-  const childParent = isNode ? obj : parent;
-
-  for (const k in obj) {
-    const value = obj[k];
-    if (Array.isArray(value)) {
-      value.forEach((v) => {
-        addParent(v as { type?: string }, childParent);
+  const pending: Array<{ value: unknown; parent: unknown }> = [
+    { value: obj, parent },
+  ];
+  while (pending.length) {
+    const entry = pending.pop();
+    if (!entry?.value || typeof entry.value !== 'object') continue;
+    const isNode =
+      'type' in entry.value && typeof entry.value.type === 'string';
+    if (isNode) {
+      Object.defineProperty(entry.value, 'parent', {
+        configurable: true,
+        writable: true,
+        enumerable: false,
+        value: entry.parent ?? null,
       });
-    } else if (value && typeof value === 'object') {
-      addParent(value as { type?: string }, childParent);
+    }
+    const childParent = isNode ? entry.value : entry.parent;
+    for (const value of Object.values(entry.value)) {
+      if (value && typeof value === 'object') {
+        pending.push({ value, parent: childParent });
+      }
     }
   }
-
-  if (isNode) {
-    Object.defineProperty(obj, 'parent', {
-      configurable: true,
-      writable: true,
-      enumerable: false,
-      value: parent ?? null,
-    });
-  }
-
   return obj;
 }
 
@@ -1269,9 +1803,25 @@ function buildStylesheet(
   parsingErrors: CssParseError[],
   stripCommentsInValues: boolean,
 ): CssStylesheetAST {
+  const nodes: postcss.ChildNode[] = [];
+  walkNodes(root, (node) => {
+    nodes.push(node);
+  });
+  const convertedNodes: ConvertedNodes = new WeakMap();
+  for (let index = nodes.length - 1; index >= 0; index--) {
+    const node = nodes[index];
+    if (
+      node.type === 'rule' &&
+      node.parent?.type === 'atrule' &&
+      keyframesRegex.test(node.parent.name)
+    )
+      continue;
+    const converted = convertChildNode(node, sourceName, convertedNodes);
+    if (converted) convertedNodes.set(node, converted);
+  }
   const rules: CssAtRuleAST[] = [];
   for (const node of root.nodes ?? []) {
-    const converted = convertChildNode(node as postcss.ChildNode, sourceName);
+    const converted = convertedNodes.get(node);
     if (converted) rules.push(converted as CssAtRuleAST);
   }
   if (stripCommentsInValues) stripValueComments(rules);
@@ -1282,14 +1832,15 @@ function buildStylesheet(
 }
 
 function stripValueComments(value: unknown): void {
-  if (Array.isArray(value)) {
-    for (const child of value) stripValueComments(child);
-  } else if (value && typeof value === 'object') {
-    if ('type' in value && value.type === CssTypes.declaration) {
-      const declaration = value as CssDeclarationAST;
+  const pending = [value];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current || typeof current !== 'object') continue;
+    if ('type' in current && current.type === CssTypes.declaration) {
+      const declaration = current as CssDeclarationAST;
       declaration.value = declaration.value.replace(commentRegex, '');
     } else {
-      for (const child of Object.values(value)) stripValueComments(child);
+      for (const child of Object.values(current)) pending.push(child);
     }
   }
 }
@@ -1313,7 +1864,7 @@ export const parse = (
   }
 
   if (css.startsWith('\uFEFF')) {
-    root.walk((node) => {
+    walkNodes(root, (node) => {
       for (const point of [node.source?.start, node.source?.end]) {
         if (point) {
           if (point.line === 1) point.column++;
@@ -1337,11 +1888,18 @@ export const parse = (
     source,
     root,
     silent,
+    input.css,
     syntaxError,
   );
-  recoverCompatibility(root, source, parsingErrors, silent);
+  recoverCompatibility(
+    root,
+    source,
+    parsingErrors,
+    silent,
+    options?.stripCommentsInValues === false,
+  );
   if (!silent) {
-    const orphan = splitTopLevelSegments(css).find(
+    const orphan = splitTopLevelSegments(input.css).find(
       (segment) => segment.text === '}',
     );
     if (orphan) {

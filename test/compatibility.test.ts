@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { parse as parseV4, stringify as stringifyV4 } from 'css-tools-v4';
 import postcss from 'postcss';
 import { parse, stringify } from '../src/index';
+import type { CssAtRuleAST, CssDeclarationAST } from '../src/type';
 
 const cases = fs.readdirSync(path.join(__dirname, 'cases')).map((name) => ({
   name: `fixture/${name}`,
@@ -193,7 +194,109 @@ const regressions = [
   ['generic-eof-crlf', '@foo\r\n \t'],
   ['generic-eof-after-rule', 'a{}\r\n@foo\n'],
   ['generic-eof-bom', '\uFEFF@foo\n'],
+  ['anonymous-layer-minified', '@layer{a{color:red}}'],
+  ['anonymous-layer-spaced', '@layer {a{color:red}}'],
+  ['anonymous-layer-empty', '@layer{}b{margin:0}'],
+  ['parameterized-generic-eof', '@unknown x'],
+  ['parameterized-generic-eof-comment', '@unknown x /*c*/'],
+  ['generic-eof-comment', '@foo /*c*/'],
+  ['generic-eof-comment-crlf', '@foo \r\n/* c */\r\n'],
+  ['generic-eof-following-generic', '@foo /*c*/ @bar'],
+  ['parameterized-generic-eof-following-generic', '@unknown x /*c*/ @bar'],
+  ['parameterized-generic-eof-trivia', '@unknown x \n'],
+  ['bare-known-media-eof', '@media'],
+  ['bare-known-supports-eof', '@supports'],
+  ['bare-known-import-eof', '@import'],
+  ['layer-statement-eof-comment', '@layer a,b /*c*/'],
+  ['layer-statement-eof-comment-control', '@layer a,b /*c*/;'],
+  ['statement-eof-trivia-charset', '@charset "UTF-8" \n'],
+  ['statement-eof-trivia-import', '@import "x" \n'],
+  ['statement-eof-trivia-namespace', '@namespace url(x) \n'],
+  ['escaped-hex-property', 'a{\\63 olor:red}'],
+  ['missing-block-keyframes', '@keyframes x;'],
+  ['missing-block-keyframes-trivia', '@keyframes x \r\n;'],
+  ['missing-block-keyframes-following-rule', '@keyframes x; a{}'],
+  ['missing-block-vendor-keyframes', '@-webkit-keyframes x;'],
+  ['missing-block-vendor-document', '@-moz-document url(x);'],
+  [
+    'missing-block-vendor-document-prelude-semicolon',
+    '@-moz-document url(x); a{}',
+  ],
+  ['missing-block-page-margin', '@page{@top-left;}'],
+  ['missing-block-page-margin-root', '@top-left;'],
+  ['missing-block-page-margin-comment', '@page{@top-left;/*c*/}'],
+  ['missing-block-page-margin-following-rule', '@page{@top-left;} a{}'],
+  [
+    'missing-block-page-margin-remaining-child',
+    '@page{@top-left; @bottom-left{x:y}}',
+  ],
+  ['declaration-only-font-face', '@font-face{--x:{a:b}}'],
+  [
+    'declaration-only-font-face-following-rule',
+    '@font-face{--x:{a:b}}/*end*/b{color:red}',
+  ],
+  ['declaration-only-nested-custom-block', '@font-face{x:{{a:b}}}'],
+  [
+    'declaration-only-font-face-comment-closer',
+    '@font-face{color: /* } */red}b{}',
+  ],
+  ['declaration-only-font-face-bracketed-value', '@font-face{x:[{a:b}]}b{}'],
+  ['declaration-only-page', '@page{--x:{a:b}}'],
+  ['declaration-only-property', '@property --test{--x:{a:b}}'],
+  ['declaration-only-counter-style', '@counter-style test{--x:{a:b}}'],
+  ['declaration-only-view-transition', '@view-transition{--x:{a:b}}'],
+  ['declaration-only-position-try', '@position-try --test{--x:{a:b}}'],
+  ['declaration-only-keyframes', '@keyframes x{0%{--x:{a:b}}}'],
+  [
+    'declaration-only-keyframes-following-rule',
+    '@keyframes x{0%{--x:{a:b}}}b{color:red}',
+  ],
+  [
+    'declaration-only-keyframe-comment-closer',
+    '@keyframes x{0%{color: /* } */red}}b{}',
+  ],
+  ['declaration-only-vendor-keyframes', '@-webkit-keyframes x{0%{--x:{a:b}}}'],
+  ['declaration-only-page-margin', '@page{@top-left{--x:{a:b}}}'],
+  [
+    'declaration-only-page-margin-following-rule',
+    '@page{@top-left{--x:{a:b}}}b{color:red}',
+  ],
 ];
+for (const [name, opening] of [
+  ['media', '@media a{'],
+  ['supports', '@supports (display:grid){'],
+  ['rule', 'a{'],
+  ['layer', '@layer a{'],
+  ['generic', '@unknown a{'],
+  ['page', '@page{'],
+]) {
+  for (const [variant, body] of [
+    ['comment', '@foo /*c*/'],
+    ['comment-crlf', '@foo /* c */\r\n'],
+    ['multiple-comments', '@foo /*c*/ /*d*/'],
+    ['statement', '@foo @bar'],
+    ['comment-and-statement', '@foo /*c*/ @bar'],
+  ]) {
+    regressions.push([`nested-eof-${name}-${variant}`, `${opening}${body}}`]);
+  }
+  if (name === 'page') continue;
+  for (const [variant, body] of [
+    ['keyframes', '@keyframes x;'],
+    ['vendor-keyframes', '@-webkit-keyframes x;'],
+    ['valid-sibling', '@keyframes x; c:d;'],
+    ['commented-sibling', '@keyframes x; /*c*/ c:d;'],
+    ['commented-header', '@keyframes x /**/ c:d;'],
+    ['comment-only-header', '@keyframes x /*c*/;'],
+    ['malformed-header', '@keyframes x junk; c:d;'],
+    ['header-declaration', '@keyframes x c:d;'],
+    ['header-value-comment', '@keyframes x c:/*keep*/d;'],
+  ]) {
+    regressions.push([
+      `nested-recovery-${name}-${variant}`,
+      `${opening}${body}}b{c:d}`,
+    ]);
+  }
+}
 cases.push(
   ...regressions.map(([name, css]) => ({ name: `regression/${name}`, css })),
 );
@@ -447,4 +550,45 @@ describe.each([
       parsing.mockRestore();
     }
   });
+});
+
+describe('deep V4-compatible media blocks', () => {
+  it.each([false, true])(
+    'preserves values, positions and parents without wrapper recursion, silent=%j',
+    (silent) => {
+      const depth = 512;
+      const css = `${'@media all{'.repeat(depth)}a{x:y;}${'} '.repeat(depth)}`;
+      const expected = parseV4(css, { silent });
+      const actual = parse(css, { silent });
+      let expectedNode: CssAtRuleAST | CssDeclarationAST =
+        expected.stylesheet.rules[0];
+      let actualNode: CssAtRuleAST | CssDeclarationAST =
+        actual.stylesheet.rules[0];
+      let parent: object = actual;
+      for (let index = 0; index < depth; index++) {
+        if (expectedNode.type !== 'media' || actualNode.type !== 'media') {
+          throw new Error(`Expected a media node at depth ${index}`);
+        }
+        expect(actualNode.media).toBe(expectedNode.media);
+        expect(actualNode.position).toEqual(expectedNode.position);
+        const descriptor = Object.getOwnPropertyDescriptor(
+          actualNode,
+          'parent',
+        );
+        expect(descriptor).toEqual({
+          value: parent,
+          enumerable: false,
+          writable: true,
+          configurable: true,
+        });
+        parent = actualNode;
+        actualNode = actualNode.rules[0];
+        expectedNode = expectedNode.rules[0];
+      }
+      expect(observable(actualNode)).toEqual(observable(expectedNode));
+      expect(actual.stylesheet.parsingErrors).toEqual(
+        expected.stylesheet.parsingErrors,
+      );
+    },
+  );
 });

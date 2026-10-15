@@ -51,7 +51,7 @@
     "test": "jest",
     "test:compatibility": "jest test/compatibility.test.ts --runInBand",
     "test:compatibility:public": "node test/fetch-public-css.mjs && CSS_TOOLS_PUBLIC_CSS=1 npm run test:compatibility",
-    "test:bundles": "node test/bundle-compatibility.mjs",
+    "test:bundles": "node test/bundle-compatibility.mjs && node test/parser-depth-compatibility.mjs",
     "clean": "rm -rf ./dist",
     "build": "rollup -c",
     "fix": "biome check --write",

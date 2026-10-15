@@ -1,3 +1,4 @@
+import { parse as parseV4, stringify as stringifyV4 } from 'css-tools-v4';
 import { type ParseOptions, parse, stringify } from '../src/index';
 
 const css =
@@ -74,6 +75,33 @@ describe('stripCommentsInValues', () => {
     );
   });
 
+  it.each(['/*keep*/red', 'red /*keep*/', '/* ; } */red'])(
+    'preserves recovered declaration comments in %s',
+    (value) => {
+      const ast = parse(`@media a{@keyframes x color:${value};}`, {
+        silent: true,
+        stripCommentsInValues: false,
+      });
+      expect(ast.stylesheet.parsingErrors).toHaveLength(1);
+      expect(ast.stylesheet.parsingErrors?.[0].reason).toBe(
+        "@keyframes missing '{'",
+      );
+      expect(stringify(ast, { compress: true })).toBe(
+        `@media a{color:${value};}`,
+      );
+    },
+  );
+
+  it.each([false, true])(
+    'keeps failed-header comments as property text, stripCommentsInValues=%j',
+    (stripCommentsInValues) => {
+      const input = 'a{@keyframes x /**/ c:d;}';
+      expect(parse(input, { silent: true, stripCommentsInValues })).toEqual(
+        parseV4(input, { silent: true }),
+      );
+    },
+  );
+
   it('does not share options between successive parses', () => {
     const plain = 'a { content: "/* text */"; }';
     expect(stringify(parse(plain, { stripCommentsInValues: false }))).toContain(
@@ -115,8 +143,12 @@ describe('stripCommentsInValues', () => {
     '@-webkit-keyframes x{0%{--x:{a:b}}}',
     '@page{@top-left{--x:{a:b}}}',
   ])('keeps declaration-only block handling for %s', (input) => {
-    const result = stringify(parse(input), { compress: true });
-    expect(result).toContain('--x:{a:b;');
+    const expected = parseV4(input);
+    const actual = parse(input);
+    expect(actual).toEqual(expected);
+    expect(stringify(actual, { compress: true })).toBe(
+      stringifyV4(expected, { compress: true }),
+    );
   });
 
   describe.each([false, true])(

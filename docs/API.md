@@ -65,11 +65,12 @@ ordinary CSS comments; positions and parse errors refer to the provided CSS.
 
 #### Known V5 Limitations
 
-`postcss-safe-parser` has an
-[accepted recovery limitation](../README.md#known-issues-in-v5) that **will not
-be fixed** in css-tools: sufficiently long sequences of declarations without
-semicolons can exhaust the stack or memory before the compatibility layer
-receives an AST. Exact V4 behavior is not guaranteed outside the tested
+Two [upstream resource limitations](../README.md#known-issues-in-v5) are accepted
+and **will not be fixed** in css-tools. Core PostCSS takes superlinear time on
+at-rule headers with many leading comments. Separately, `postcss-safe-parser`
+can exhaust the stack or memory on long sequences without declaration
+semicolons. Both occur before the compatibility layer receives an AST and affect
+strict and silent parsing. Exact V4 behavior is not guaranteed outside the tested
 compatibility corpus.
 
 ### `stringify(ast, options?)`
@@ -251,10 +252,12 @@ console.log('Valid rules:', result.stylesheet.rules.length);
 ```
 
 Silent mode does not guarantee that parsing returns an AST or finishes within
-a bounded time. The upstream `postcss-safe-parser` recovery path can exhaust
-the stack or memory on long sequences without semicolons. This is a
-[known V5 limitation](../README.md#known-issues-in-v5) that will not be fixed
-in css-tools.
+a bounded time. Core PostCSS's leading-comment token handling and
+`postcss-safe-parser`'s missing-semicolon recovery are
+[known V5 limitations](../README.md#known-issues-in-v5) that will not be fixed
+in css-tools. Bound untrusted input size and use a worker or process with an
+externally enforceable timeout; an in-process timer cannot interrupt synchronous
+parsing.
 
 ### Source Tracking
 
