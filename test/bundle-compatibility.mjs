@@ -47,6 +47,13 @@ const bundles = [
 const inputs = [
   '',
   'a { color: red; }',
+  'a{color:red;};\nb{color:blue;}',
+  '@supports (x:y){a{b:c;};d{e:f}}',
+  'a{color:red;\u00A0background:blue}',
+  '@media x{a{\u2028background:blue}}',
+  '\u00A0a{color:red}',
+  '\u00A0@media x{a{color:red}}',
+  'a{--x:{color:red};\uFEFFmargin:0;}',
   '@media screen { a { content: "/* text */"; color: red/**/blue; } }',
   'a { _color: blue; *zoom: 1; }',
   '@keyframes example { from { opacity: 0 } to { opacity: 1 } }',
@@ -168,6 +175,11 @@ for (const [name, api] of bundles) {
   for (const [css, expected] of [
     ['a { content: "/* text */"; }', 'a{content:"/* text */";}'],
     ['a{color:/*keep*/red;}', 'a{color:/*keep*/red;}'],
+    ['a{\u00A0color:/*keep*/red;}', 'a{color:/*keep*/red;}'],
+    [
+      '@media x{\u00A0a{\u2028color:/*keep*/red;}}',
+      '@media x{a{color:/*keep*/red;}}',
+    ],
     ['a{color:/*keep*/red !important;}', 'a{color:/*keep*/red !important;}'],
     ['a { color: red /* brand */ }', 'a{color:red /* brand */;}'],
     ['a{color:/* ; } ( " */red;}', 'a{color:/* ; } ( " */red;}'],

@@ -39,6 +39,7 @@ import {
 } from '../utils/stringSearch';
 
 const commentRegex = /\/\*[^]*?(?:\*\/|$)/g;
+const nonCssWhitespaceRegex = /[^\S\t\n\f\r ]/;
 const propertyPrefixRegex = /^(\*?[-#/*\\\w]+(\[[0-9a-z_-]+\])?)\s*/;
 const keyframesRegex = /^([-\w]+)?keyframes$/;
 const knownAtRuleRegex =
@@ -93,12 +94,13 @@ function walkNodes(
   }
 }
 
-function prepareCompatibilityInput(css: string): {
-  css: string;
-  ruleStarts: ReadonlySet<number>;
-} {
-  const ruleStarts = new Set<number>();
-  if (!css.includes('--') && !css.includes('@')) return { css, ruleStarts };
+function prepareCompatibilityInput(css: string): string {
+  if (
+    !css.includes('--') &&
+    !css.includes('@') &&
+    !nonCssWhitespaceRegex.test(css)
+  )
+    return css;
   const contexts: Array<{ nesting: boolean; keyframes: boolean }> = [];
   let nesting = true;
   let keyframes = false;
@@ -109,7 +111,7 @@ function prepareCompatibilityInput(css: string): {
   let colon = false;
   let characters: string[] | undefined;
 
-  // Equal-length masking preserves V4 block classification and source offsets.
+  // Equal-length masking preserves V4 token boundaries and source offsets.
   function mask(from: number, until: number): void {
     characters ??= css.split('');
     for (let offset = from; offset < until; offset++) {
@@ -136,9 +138,19 @@ function prepareCompatibilityInput(css: string): {
       offset = end + 1;
       continue;
     }
-    if (start === undefined && !/\s/.test(char)) {
-      start = offset;
-      colon = false;
+    if (start === undefined) {
+      if (/\s/.test(char)) {
+        // The leading BOM is handled by the source-offset adjustment below.
+        if (
+          nonCssWhitespaceRegex.test(char) &&
+          (offset !== 0 || char !== '\uFEFF')
+        ) {
+          mask(offset, offset + 1);
+        }
+      } else {
+        start = offset;
+        colon = false;
+      }
     }
     if (char === '"' || char === "'") {
       quote = char;
@@ -168,7 +180,6 @@ function prepareCompatibilityInput(css: string): {
           ? /^@([-\w]+)/.exec(css.slice(start, offset))?.[1]
           : undefined;
       if (nesting && start !== undefined && css.startsWith('--', start)) {
-        ruleStarts.add(start);
         characters ??= css.split('');
         characters[start] = '_';
         characters[start + 1] = '_';
@@ -192,7 +203,7 @@ function prepareCompatibilityInput(css: string): {
       start = undefined;
     }
   }
-  return { css: characters?.join('') ?? css, ruleStarts };
+  return characters?.join('') ?? css;
 }
 
 // Splits CSS into top-level rule/at-rule/statement segments for error detection.
@@ -355,7 +366,6 @@ function restoreCompatibilitySpans(
   root: postcss.Root,
   source: CompatibilitySource,
   preserveComments: boolean,
-  ruleStarts: ReadonlySet<number>,
 ): void {
   function restoreContainer(container: postcss.Container): void {
     if (!container.nodes) return;
@@ -451,7 +461,7 @@ function restoreCompatibilitySpans(
       delete node.raws.selector;
       const suffix = node.raws.ownSemicolon;
       const end = node.source?.end?.offset;
-      if (ruleStarts.has(start) && suffix && end !== undefined && node.source) {
+      if (suffix && end !== undefined && node.source) {
         const offset = end - suffix.length;
         node.source.end = {
           ...source.pointAt(offset - 1),
@@ -1856,10 +1866,10 @@ export const parse = (
   let root: postcss.Root;
   let syntaxError: postcss.CssSyntaxError | undefined;
   try {
-    root = postcss.parse(input.css, postcssOptions);
+    root = postcss.parse(input, postcssOptions);
   } catch (e) {
     if (!(e instanceof postcss.CssSyntaxError)) throw e;
-    root = safeParser(input.css, postcssOptions);
+    root = safeParser(input, postcssOptions);
     syntaxError = e;
   }
 
@@ -1873,7 +1883,7 @@ export const parse = (
       }
     });
   }
-  if (root.source && (input.css !== css || css.startsWith('\uFEFF'))) {
+  if (root.source && (input !== css || css.startsWith('\uFEFF'))) {
     root.source.input.css = css;
   }
 
@@ -1882,13 +1892,12 @@ export const parse = (
     root,
     source,
     options?.stripCommentsInValues === false,
-    input.ruleStarts,
   );
   let parsingErrors = collectCompatibilityErrors(
     source,
     root,
     silent,
-    input.css,
+    input,
     syntaxError,
   );
   recoverCompatibility(
@@ -1899,7 +1908,7 @@ export const parse = (
     options?.stripCommentsInValues === false,
   );
   if (!silent) {
-    const orphan = splitTopLevelSegments(input.css).find(
+    const orphan = splitTopLevelSegments(input).find(
       (segment) => segment.text === '}',
     );
     if (orphan) {

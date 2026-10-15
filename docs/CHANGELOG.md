@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Improve V4 compatibility for value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS shims. The known issues below remain.
+- Preserve V4 parsing and recovery for semicolons following ordinary rules, without spurious missing-brace errors or lost declarations.
+- Preserve declarations and source positions after V4 whitespace characters such as non-breaking spaces and Unicode line separators.
 - Eliminate per-error reparsing and repeated whole-tree and source-prefix scans in the compatibility layer.
 - Preserve full declaration-value spans, including leading and trailing comments, V4 whitespace, and delimiter positions.
 - Restore V4 property/value boundaries for escaped property-name colons.

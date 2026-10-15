@@ -39,6 +39,15 @@ describe('stripCommentsInValues', () => {
   describe.each([false, true])('comment preservation, silent=%j', (silent) => {
     it.each([
       ['a{color:/*keep*/red;}', 'a{color:/*keep*/red;}'],
+      ['a{\u00A0color:/*keep*/red;}', 'a{color:/*keep*/red;}'],
+      [
+        'a{color:blue;\u2028content:"/*keep*/";}',
+        'a{color:blue;content:"/*keep*/";}',
+      ],
+      [
+        '@media x{\u00A0a{\u2028color:/*keep*/red;}}',
+        '@media x{a{color:/*keep*/red;}}',
+      ],
       ['a{--x:/*keep*/red;}', 'a{--x:/*keep*/red;}'],
       ['a{color:/*keep*/red !important;}', 'a{color:/*keep*/red !important;}'],
       ['a{color:/*a*/red/*b*/;}', 'a{color:/*a*/red/*b*/;}'],

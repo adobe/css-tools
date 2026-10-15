@@ -261,7 +261,87 @@ const regressions = [
     'declaration-only-page-margin-following-rule',
     '@page{@top-left{--x:{a:b}}}b{color:red}',
   ],
+  ['stray-semicolon-after-rule', 'a{color:red;};\nb{color:blue;}'],
+  ['stray-semicolon-after-empty-rule', 'a{};b{}'],
+  ['stray-semicolon-after-spaced-rule', 'a{b:c;}\t;b{c:d}'],
+  ['stray-semicolon-before-comment', 'a{b:c;}; /*x*/ c{d:e;}'],
+  ['stray-semicolon-repeated', 'a{};;b{}'],
+  ['stray-semicolon-at-eof', '.a { color: red; };'],
+  [
+    'stray-semicolon-without-declaration-semicolon',
+    'a{color:red};b{color:blue}',
+  ],
+  [
+    'stray-semicolon-after-trailing-comment',
+    'a{color:red;/*tail*/};b{color:blue;}',
+  ],
+  ['stray-semicolon-in-supports', '@supports (x:y){a{b:c;};d{e:f}}'],
+  ['stray-semicolon-in-nested-rule', '.a{&:hover{color:blue;};color:red;}'],
+  ['stray-semicolon-in-media', '@media x{a{};b{c:d}}'],
+  ['stray-semicolon-in-layer', '@layer x{a{b:c;};d{e:f}}'],
+  ['stray-semicolon-in-generic-rule', '@unknown x{a{b:c;};d{e:f}}'],
+  [
+    'v4-whitespace-value-preservation',
+    'a{content:"left\u00A0right";--x:var(--y,\u2028red)}',
+  ],
+  [
+    'v4-whitespace-selector-preservation',
+    '[data-value="left\u00A0right"]{color:red}',
+  ],
+  [
+    'v4-whitespace-bom-crlf',
+    '\uFEFF\u00A0a{\r\n\u2000color:red;\u2028background:blue}',
+  ],
+  [
+    'v4-whitespace-mixed-comments',
+    '/*x*/\r\n\u00A0 \u2028a{\uFEFF\tcolor:red}',
+  ],
+  ['v4-whitespace-property-hacks', 'a{\u00A0*zoom:1;\u2028_color:red;}'],
+  [
+    'v4-whitespace-long-runs',
+    `a{${'\u00A0'.repeat(1024)}color:red;${'\u2028'.repeat(1024)}background:blue}`,
+  ],
 ];
+for (const whitespace of [
+  ' ',
+  '\t',
+  '\n',
+  '\r',
+  '\r\n',
+  '\f',
+  '\v',
+  '\u00A0',
+  '\u1680',
+  ...Array.from({ length: 11 }, (_, index) =>
+    String.fromCharCode(0x2000 + index),
+  ),
+  '\u2028',
+  '\u2029',
+  '\u202F',
+  '\u205F',
+  '\u3000',
+  '\uFEFF',
+]) {
+  const name = Array.from(whitespace, (character) =>
+    character.charCodeAt(0).toString(16),
+  ).join('-');
+  for (const [context, css] of [
+    ['leading-rule', `${whitespace}a{color:red}`],
+    ['leading-at-rule', `${whitespace}@media x{a{color:red}}`],
+    ['following-rule-comment', `a{color:red}/*x*/${whitespace}b{color:blue}`],
+    ['leading-declaration', `a{${whitespace}color:red}`],
+    ['following-declaration', `a{color:red;${whitespace}background:blue}`],
+    ['following-comment', `a{color:red;/*x*/${whitespace}background:blue}`],
+    ['nested-rule', `@media x{a{${whitespace}background:blue}}`],
+    ['nested-at-rule', `@supports (x:y){${whitespace}@media x{a{color:red}}}`],
+    ['custom-property-block', `a{${whitespace}--x:{color:red}; margin:0;}`],
+    ['font-face', `@font-face{${whitespace}font-family:test}`],
+    ['page', `@page{${whitespace}color:red}`],
+    ['property-separator', `a{color${whitespace}:red}`],
+  ]) {
+    regressions.push([`v4-whitespace-${name}-${context}`, css]);
+  }
+}
 for (const [name, opening] of [
   ['media', '@media a{'],
   ['supports', '@supports (display:grid){'],
