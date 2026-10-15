@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-10-13
+
+### Added
+- Add `parse` option `stripCommentsInValues`, enabled by default for V4 compatibility, with an opt-out that preserves leading, embedded, and trailing value comments.
+- Export the `ParseOptions` TypeScript interface.
+- Add differential tests against published V4, including seeded generated CSS, checksum-pinned public stylesheets, and package bundle checks.
+- Add isolated depth-2048 parsing checks for every package loader, including source positions and parent descriptors.
+
+### Changed
+- Replace the parser internals with `postcss` and `postcss-safe-parser`, keeping the css-tools API and AST format, with default-output compatibility verified for the tested corpus.
+- Make V5 the final css-tools release; recommend migrating directly to PostCSS when possible.
+- Use clean, lockfile-based installs and validate production dependencies and all package bundles before publishing.
+
+### Fixed
+- Improve V4 compatibility for value normalization, property hacks, at-rule case handling, BOM positions, error details, and malformed-CSS recovery using PostCSS shims. The known issues below remain.
+- Preserve V4 parsing and recovery for semicolons following ordinary rules, without spurious missing-brace errors or lost declarations.
+- Preserve declarations and source positions after V4 whitespace characters such as non-breaking spaces and Unicode line separators.
+- Eliminate per-error reparsing and repeated whole-tree and source-prefix scans in the compatibility layer.
+- Preserve full declaration-value spans, including leading and trailing comments, V4 whitespace, and delimiter positions.
+- Restore V4 property/value boundaries for escaped property-name colons.
+- Preserve V4 nested-rule classification for custom-property blocks without per-block reparsing.
+- Restore V4 handling of missing semicolons, extra colons, and empty-property recovery.
+- Preserve comments in at-rule preludes.
+- Include trailing whitespace in generic statement at-rule end positions, including bare EOF statements, matching V4.
+- Preserve V4's generic at-rule classification and output for minified anonymous `@layer` blocks.
+- Restore EOF at-rule comments, whitespace, source spans, and nested generic statements.
+- Restore missing-block diagnostics for named/vendor keyframes, vendor documents, and page-margin boxes; bound nested recovery to the failed statement and enclosing body.
+- Correct declaration-only custom-block and enclosing-node end positions.
+- Replace recursive compatibility traversal, AST conversion, value normalization, and parent attachment with iterative traversal.
+- Keep the UMD browser bundle self-contained without external PostCSS globals.
+
+### Security
+- Require PostCSS 8.5.30 with patched `nanoid` and `source-map-js` dependencies.
+- Disable input source-map processing, matching V4 and preventing embedded or external source maps from being loaded while parsing CSS.
+
+### Known Issues
+
+Core PostCSS takes superlinear time on at-rule headers with many leading comments.
+Separately, upstream `postcss-safe-parser` recovery can exhaust the stack or memory
+on long sequences without declaration semicolons. Both affect strict and silent
+parsing, are accepted for the final V5 release, and **will not be fixed** in
+css-tools. See [known issues in V5](../README.md#known-issues-in-v5) for examples and
+mitigation.
+
 ## [4.5.0] - 2026-05-20
 
 ### Added
