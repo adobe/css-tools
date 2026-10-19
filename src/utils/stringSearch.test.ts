@@ -97,6 +97,17 @@ describe('indexOfArrayWithBracketAndQuoteSupport', () => {
       indexOfArrayWithBracketAndQuoteSupport(tooManyBrackets, [')']),
     ).toThrow('Too many escaping');
   });
+
+  it('should handle deeply nested brackets without overflowing the stack', () => {
+    const depth = 100_000;
+    const nested = `${'('.repeat(depth)}"a,b"${')'.repeat(depth)}`;
+    expect(indexOfArrayWithBracketAndQuoteSupport(`${nested},c`, [','])).toBe(
+      nested.length,
+    );
+    expect(
+      indexOfArrayWithBracketAndQuoteSupport(`${'('.repeat(depth)},c`, [',']),
+    ).toBe(-1);
+  });
 });
 
 describe('splitWithBracketAndQuoteSupport', () => {
@@ -135,5 +146,12 @@ describe('splitWithBracketAndQuoteSupport', () => {
 
   test('handles empty strings', () => {
     expect(splitWithBracketAndQuoteSupport('', [','])).toEqual([]);
+  });
+
+  test('splits long lists', () => {
+    const parts = Array.from({ length: 50_000 }, (_, index) => `.c${index}`);
+    expect(splitWithBracketAndQuoteSupport(parts.join(','), [','])).toEqual(
+      parts,
+    );
   });
 });
