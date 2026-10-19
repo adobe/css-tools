@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restore missing-block diagnostics for named/vendor keyframes, vendor documents, and page-margin boxes; bound nested recovery to the failed statement and enclosing body.
 - Correct declaration-only custom-block and enclosing-node end positions.
 - Replace recursive compatibility traversal, AST conversion, value normalization, and parent attachment with iterative traversal.
+- Parse empty `@keyframes` blocks that contain whitespace or comments without spurious missing-brace errors.
+- Restore V4 recovery from a stray `}` followed by `;` without spurious missing-brace errors.
+- Restore V4 recovery where PostCSS reads the rest of the input as one node: unclosed parentheses, quotes and `url(` in selectors and values.
+- Restore V4 block at-rule preludes that continue past a `;` or `}` to the end of the input or to a block in the same parent, such as `@media y{@media x}}` and `@media x}b{}`.
+- Restore V4 handling of doubled semicolons after statements, `@page` statements, malformed import-like statements such as `@import;;` and `@import{}`, nameless keyframes, and unusual keyframe selectors.
+- Read at-rules whose preludes V4's dedicated parsers reject, such as `@property x{}`, as generic at-rules, matching V4.
+- Read non-CSS whitespace such as a non-breaking space after an at-keyword as V4 does.
+- Split selector lists in linear time instead of quadratic time, and parse deeply nested parentheses in selectors without overflowing the call stack.
+- Bound compatibility-layer searches and recovery re-parsing so the compatibility layer does not take quadratic time on malformed input.
 - Keep the UMD browser bundle self-contained without external PostCSS globals.
 
 ### Security
@@ -42,12 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known Issues
 
-Core PostCSS takes superlinear time on at-rule headers with many leading comments.
-Separately, upstream `postcss-safe-parser` recovery can exhaust the stack or memory
-on long sequences without declaration semicolons. Both affect strict and silent
-parsing, are accepted for the final V5 release, and **will not be fixed** in
-css-tools. See [known issues in V5](../README.md#known-issues-in-v5) for examples and
-mitigation.
+Core PostCSS takes superlinear time on at-rule headers with many leading comments
+and on many unclosed `url(` tokens. Separately, upstream `postcss-safe-parser`
+recovery can exhaust the stack or memory on long sequences without declaration
+semicolons. These affect strict and silent parsing, are accepted for the final V5
+release, and **will not be fixed** in css-tools. To restore V4's recovery, silent
+mode can parse unclosed-`url(` input up to eight more times, which multiplies its
+cost. Some malformed CSS still parses differently from V4. For example, after
+eight re-parses silent mode keeps PostCSS's reading of any further malformed
+input, and a nested block at-rule without a body keeps PostCSS's structure when
+V4 reads its prelude past the parent's `}` into a later block, as in
+`@media y{@media x}b{}}`. See
+[known issues in V5](../README.md#known-issues-in-v5) for examples and mitigation.
 
 ## [4.5.0] - 2026-05-20
 
