@@ -248,14 +248,20 @@ second.
 
 **Safe-parser recovery resource exhaustion** occurs when `postcss-safe-parser`
 recursively recovers long sequences without declaration semicolons, such as
-`'a {' + '\n color: red'.repeat(3100) + '\n}'`. This can overflow the stack or
-exhaust memory before the compatibility layer receives an AST. V4 accepts this
-input; the failure threshold depends on the runtime and resource limits. This
-recovery issue is separate from core PostCSS's token-handling cost.
+`'a {' + '\n color: red'.repeat(3100) + '\n}'`. Each recursion level copies the
+remaining tokens, so this can overflow the stack or exhaust memory before the
+compatibility layer receives an AST. With Node 24's default limits, 37 KB of
+this shape threw a stack-overflow `RangeError` after about 0.15 s, 300 KB took
+about 1.2 s and 3.4 GB of memory to throw, and 600 KB exhausted the heap, which
+aborts the process. V4 parses each in under 5 ms. The thresholds depend on the
+runtime and resource limits. This recovery issue is separate from core
+PostCSS's token-handling cost.
 
 For untrusted CSS, `silent` is not an exception-safety or execution-time
 guarantee. Limit input size and isolate parsing in a worker or process with an
-enforceable timeout; an in-process timer cannot interrupt synchronous parsing.
+enforceable timeout and memory limit, such as a `Worker` with `resourceLimits`;
+an in-process timer cannot interrupt synchronous parsing, and heap exhaustion
+cannot be caught.
 Applications relying on V4's behavior for these inputs should not treat V5 as a
 behaviorally identical upgrade.
 
@@ -267,7 +273,9 @@ errors, silent recovery, or both. Known examples:
   rules than V4. With nine or more copies of `a{b:url(x;}`, it keeps `url(x`
   values where V4 reports errors.
 - V4 reads a nested block at-rule's prelude past the parent's `}` into a later
-  block, as in `@media y{@media x}b{}}`; V5 keeps PostCSS's structure.
+  block, as in `@media y{@media x}b{}}`; V5 keeps PostCSS's structure. At the
+  root, V4 also reads some at-rules' preludes past a stray `}`, as in
+  `@foo x}b{c:d}`; V5 reads the later block as a separate rule.
 - V4 accepts unclosed `[` in values and selectors, as in `a{b:[c;}d{e:f}` and
   `a[b{}`.
 - When no `)` follows an unclosed `url(` in a selector, as in `url(x {}`, V4
@@ -275,6 +283,11 @@ errors, silent recovery, or both. Known examples:
   `Unclosed bracket` error.
 - V4 rejects a block after an `@import` nested in a block at-rule, as in
   `@media x{@import y{a:b}}`; V5 reads an `@import` rule.
+- V4 ends a `@keyframes` block at a nested at-rule or selectorless block, as in
+  `@keyframes x{@media x{}}` and `@keyframes x{{}}`, reports a missing `}` and
+  reads the rest outside the block. V5 keeps the `@keyframes` block and drops
+  the nested content, reporting an error only for malformed content, such as a
+  missing selector.
 
 ## Documentation
 

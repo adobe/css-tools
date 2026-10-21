@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parse as parseV4, stringify as stringifyV4 } from 'css-tools-v4';
 import postcss from 'postcss';
-import { parse, stringify } from '../src/index';
+import { type ParseOptions, parse, stringify } from '../src/index';
 import type { CssAtRuleAST, CssDeclarationAST } from '../src/type';
 
 const cases = fs.readdirSync(path.join(__dirname, 'cases')).map((name) => ({
@@ -373,6 +373,81 @@ const regressions = [
   ['import-block-then-string', '@import a{b:c}"d";e'],
   ['document-block', '@document{a{b:c}}'],
   ['nested-import-block-eof', '@media x{@import y{a:b'],
+  ['bodiless-at-rules-whitespace', `${'@a}'.repeat(3)}${' '.repeat(9)}`],
+  ['nameless-at-rules-comments', `${'@}/**/'.repeat(3)}@b`],
+  ['nameless-at-rules-long-at-word', `${'@}'.repeat(3)}@a${'a'.repeat(8)}`],
+  ['nameless-at-rule-comment-statement', '@} /*c*/ a:@b;'],
+  ['nameless-at-rule-statements', '@} a:@b;'.repeat(3)],
+  ['long-at-rule-name-nameless-blocks', `@aaaaaaaa{${'@{}'.repeat(3)}}`],
+  ['long-at-rule-name-rules', `@aaaaaaaa{${'b{}'.repeat(3)}}`],
+  ['spaced-page-statements', `@page${' '.repeat(8)}{${'@b;'.repeat(3)}}`],
+  [
+    'spaced-property-statements',
+    `@property${' '.repeat(8)}--x{${'@b;'.repeat(3)}}`,
+  ],
+  [
+    'deep-media-pages',
+    `${'@media x{'.repeat(3)}${'@page{}'.repeat(3)}${'}'.repeat(3)}`,
+  ],
+  ['deep-rule-statements', `${'a{'.repeat(3)}${'@x;}'.repeat(3)}`],
+  ['deep-media-statements', `${'@media x{'.repeat(3)}${'@x;}'.repeat(3)}`],
+  ['brace-ended-layer-runs', '@layer x}'.repeat(3)],
+  ['brace-ended-import-runs', '@import x}'.repeat(3)],
+  ['brace-ended-import-runs-then-rule', `x ${'@import x}'.repeat(3)}a{}`],
+  ['import-bracket-stray-braces', `@import [x;${'}'.repeat(8)}`],
+  ['nested-font-face-paren-errors', `a{@font-face (${'x;'.repeat(4)})}`],
+  ['unclosed-nested-pages', '@page{'.repeat(4)],
+  ['page-flatten-siblings', '@page{@font-face;a{}}'.repeat(3)],
+  ['page-flatten-sibling-at-rules', '@page{@font-face;@foo{}}'.repeat(3)],
+  ['page-flatten-sibling-margins', '@page{@top-left;a{}}'.repeat(3)],
+  ['page-flatten-sibling-media', '@page{@media x;@foo{}}'.repeat(3)],
+  [
+    'page-flatten-nested',
+    `${'@page{@font-face;a{}'.repeat(3)}${'}'.repeat(3)}`,
+  ],
+  [
+    'page-flatten-page-in-page',
+    '@page{@font-face;@page{@font-face;a{}}b{}}'.repeat(2),
+  ],
+  [
+    'page-flatten-deep-page-in-page',
+    `${'@page{@font-face;@page{@font-face;@page{x;}a{}}'.repeat(2)}}}`,
+  ],
+  [
+    'page-flatten-margin-then-statement',
+    '@page{@top-left{}a{}@font-face;b{}}'.repeat(2),
+  ],
+  [
+    'recovered-font-face-declarations',
+    `a{${'@font-face x:y;'.repeat(3)}${'d:e;'.repeat(3)}}`,
+  ],
+  [
+    'recovered-font-face-declaration-pairs',
+    `a{${'@font-face x:y;d:e;'.repeat(3)}}`,
+  ],
+  [
+    'recovered-font-face-paren-declarations',
+    `a{@font-face (${'b:c;'.repeat(3)});${'d:e;'.repeat(3)}}`,
+  ],
+  [
+    'recovered-page-string-declarations',
+    `a{@page "${'b:c;'.repeat(3)}";${'d:e;'.repeat(3)}}`,
+  ],
+  [
+    'recovered-media-font-face-declarations',
+    `@media x{${'@font-face x:y;'.repeat(3)}${'b{}'.repeat(3)}}`,
+  ],
+  ['junk-import-blocks', `a:b;${'@import x}{}'.repeat(3)}}`],
+  ['junk-namespace-blocks', `a:b;${'@namespace x}{}'.repeat(3)}}`],
+  ['junk-import-block-runs', `b}@import x}${'{}@import x}'.repeat(3)}`],
+  ['junk-import-unclosed-blocks', `${'b}@import x}{'.repeat(3)}}`],
+  ['junk-import-layer-blocks', 'b}@import x}{}@layer y}'.repeat(3)],
+  ['junk-charset-namespace-blocks', 'b}@charset x}{}@namespace y}{}'.repeat(3)],
+  ['brace-ended-layer-then-media', '@layer x}@media y}'],
+  ['brace-ended-layer-then-supports', '@layer x}@supports y}'],
+  ['brace-ended-layer-then-font-face', '@layer x}@font-face}'],
+  ['brace-ended-layer-then-keyframes', '@layer x}@keyframes y}'],
+  ['brace-ended-layer-runs-then-media', '@layer x}@media y}'.repeat(2)],
 ];
 for (const whitespace of [
   ' ',
@@ -743,4 +818,218 @@ describe('deep V4-compatible media blocks', () => {
       );
     },
   );
+});
+
+describe('V5 malformed-input scaling', () => {
+  it('reports one error per selectorless keyframe block', () => {
+    const depth = 512;
+    const css = `@keyframes x{${'{'.repeat(depth)}}`;
+    expect(
+      parse(css, { silent: true }).stylesheet.parsingErrors?.length,
+    ).toBeLessThanOrEqual(2 * depth);
+  });
+
+  it('reports the errors of each nameless at-rule once', () => {
+    const count = 512;
+    const css = `${'@}/**/'.repeat(count)}@b`;
+    expect(
+      parse(css, { silent: true }).stylesheet.parsingErrors?.length,
+    ).toBeLessThanOrEqual(2 * count);
+  });
+
+  it.each([
+    {
+      name: 'imports in keyframes',
+      css: `@keyframes x{${'@import x}'.repeat(1 << 12)}`,
+    },
+    { name: 'layer statements', css: '@layer x}'.repeat(1 << 12) },
+    {
+      name: 'nameless at-rules',
+      css: `${'@}'.repeat(1 << 11)}@a${'a'.repeat(1 << 12)}`,
+    },
+  ])('keeps output linear for brace-ended $name', ({ css }) => {
+    const output = stringify(parse(css, { silent: true }), { compress: true });
+    expect(output.length).toBeLessThanOrEqual(2 * css.length);
+  });
+
+  it.each([
+    {
+      name: 'stray braces after an import',
+      css: `@import [x;${'}'.repeat(1 << 17)}`,
+      errors: 1 << 17,
+    },
+    {
+      name: 'declarations in a nested font-face prelude',
+      css: `a{@font-face (${'x;'.repeat(1 << 17)})}`,
+      errors: (1 << 17) + 3,
+    },
+  ])('reports every error for $name', ({ css, errors }) => {
+    expect(parse(css, { silent: true }).stylesheet.parsingErrors?.length).toBe(
+      errors,
+    );
+  });
+
+  // Native searches hide a rescan per nesting level or per repeated token at
+  // test sizes, so count the characters and nodes they visit instead of
+  // timing the parse. Spies would record every call of a reverted rescan.
+  function searchedLength(css: string, options: ParseOptions): number {
+    const strings = String.prototype;
+    const arrays = Array.prototype;
+    const { indexOf, includes, lastIndexOf } = strings;
+    const arrayIndexOf = arrays.indexOf;
+    let searched = 0;
+    const count = (length: number, index: number, from?: number) => {
+      searched += (index === -1 ? length : index) - Math.max(from ?? 0, 0);
+    };
+    strings.indexOf = function (this: string, search: string, from?: number) {
+      const index = indexOf.call(this, search, from);
+      count(this.length, index, from);
+      return index;
+    };
+    strings.includes = function (this: string, search: string, from?: number) {
+      const index = indexOf.call(this, search, from);
+      count(this.length, index, from);
+      return index !== -1;
+    };
+    strings.lastIndexOf = function (
+      this: string,
+      search: string,
+      from?: number,
+    ) {
+      const index = lastIndexOf.call(this, search, from);
+      searched +=
+        Math.min(from ?? this.length, this.length) - Math.max(index, 0);
+      return index;
+    };
+    arrays.indexOf = function (
+      this: unknown[],
+      search: unknown,
+      from?: number,
+    ) {
+      const index = arrayIndexOf.call(this, search, from);
+      count(this.length, index, from);
+      return index;
+    };
+    try {
+      parse(css, options);
+    } finally {
+      Object.assign(strings, { indexOf, includes, lastIndexOf });
+      arrays.indexOf = arrayIndexOf;
+    }
+    return searched;
+  }
+
+  it.each<{ name: string; css: string; options?: ParseOptions }>([
+    {
+      name: 'each nested block',
+      css: `${'@page{;'.repeat(1 << 9)}${' '.repeat(1 << 14)}`,
+    },
+    {
+      name: 'each split declaration with preserved comments',
+      css: `a{${`c:d /*${'x'.repeat(16)}*/ `.repeat(1 << 10)}`,
+      options: { stripCommentsInValues: false },
+    },
+    {
+      name: 'semicolons in parentheses in a nested font-face',
+      css: `a{@font-face ${'(;'.repeat(1 << 12)}`,
+    },
+    {
+      name: 'escaped semicolons in a nested font-face',
+      css: `a{@font-face ${'\\;'.repeat(1 << 12)}`,
+    },
+    {
+      name: 'properties with preserved comments in a nested font-face',
+      css: `a{@font-face ${`x:/*${'x'.repeat(16)}*/`.repeat(1 << 10)}`,
+      options: { stripCommentsInValues: false },
+    },
+    {
+      name: 'unclosed comments after a font-face',
+      css: `@font-face ${'/* '.repeat(1 << 12)}`,
+    },
+    {
+      name: 'unclosed comments in keyframes',
+      css: `@keyframes k{from{${'\\;/*'.repeat(1 << 12)})}`,
+    },
+    {
+      name: 'unclosed comments in nested rules',
+      css: `a{b{${'\\;/*@supports '.repeat(1 << 12)})}`,
+    },
+    {
+      name: 'comments in a block',
+      css: `a{${'/**/'.repeat(1 << 12)}/*`,
+    },
+    {
+      name: 'comments in a declaration value',
+      css: `a{b:c${'/*}*//*'.repeat(1 << 12)}@x;`,
+    },
+  ])('does not rescan the source for $name', ({ css, options }) => {
+    expect(searchedLength(css, { ...options, silent: true })).toBeLessThan(
+      100 * css.length,
+    );
+  });
+
+  describe('parse time', () => {
+    // Bounds are relative to well-formed CSS parsed in the same process, so
+    // they hold on slow machines. These inputs cost under 3 times the
+    // reference per character; the quadratic paths they guard against cost
+    // over 15 times as much at these sizes.
+    const limit = 10;
+    let reference = Number.POSITIVE_INFINITY;
+
+    function parseTime(css: string): number {
+      const start = performance.now();
+      parse(css, { silent: true });
+      return (performance.now() - start) / css.length;
+    }
+
+    beforeAll(() => {
+      const css = 'a{b:c}'.repeat(1 << 14);
+      parseTime(css);
+      for (let run = 0; run < 3; run++) {
+        reference = Math.min(reference, parseTime(css));
+      }
+    });
+
+    it.each([
+      {
+        name: 'bodiless at-rules before whitespace',
+        css: `${'@a}'.repeat(1 << 14)}${' '.repeat(3 << 14)}`,
+      },
+      {
+        name: 'nameless blocks in a long-named at-rule',
+        css: `@${'a'.repeat(1 << 15)}{${'@{}'.repeat(10000)}}`,
+      },
+      {
+        name: 'rules in a long-named at-rule',
+        css: `@${'a'.repeat(1 << 15)}{${'b{}'.repeat(10000)}}`,
+      },
+      {
+        name: 'pages in deep media blocks',
+        css: `${'@media x{'.repeat(7500)}${'@page{}'.repeat(7500)}${'}'.repeat(7500)}`,
+      },
+      {
+        name: 'statements in deep rules',
+        css: `${'a{'.repeat(20000)}${'@x;}'.repeat(20000)}`,
+      },
+      {
+        name: 'brace-ended media in keyframes',
+        css: `@keyframes x{${'@media x}'.repeat(30000)}`,
+      },
+      { name: 'unclosed nested pages', css: '@page{'.repeat(10000) },
+      {
+        name: 'imports read as selectors',
+        css: 'b}@import x}{}'.repeat(30000),
+      },
+      {
+        name: 'properties in a nested font-face',
+        css: `a{@font-face ${'x:'.repeat(1 << 14)}`,
+      },
+    ])('parses $name in linear time', ({ css }) => {
+      let ratio = Number.POSITIVE_INFINITY;
+      for (let attempt = 0; attempt < 3 && ratio >= limit; attempt++) {
+        ratio = Math.min(ratio, parseTime(css) / reference);
+      }
+      expect(ratio).toBeLessThan(limit);
+    });
+  });
 });

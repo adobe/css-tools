@@ -85,10 +85,16 @@ function trim(str: string): string {
 }
 
 // Nodes in `skipped` are passed over together with their descendants.
+// `inserted` gives, one at a time, the childless nodes to visit in a
+// container before `next`, its node at the walk's index, as if there.
 function walkNodes(
   root: postcss.Container,
   visit: (node: postcss.ChildNode, index: number) => void,
   skipped?: ReadonlySet<postcss.ChildNode>,
+  inserted?: (
+    container: postcss.Container,
+    next: postcss.ChildNode | undefined,
+  ) => postcss.ChildNode | undefined,
 ): void {
   const pending: Array<{
     container: postcss.Container;
@@ -103,6 +109,11 @@ function walkNodes(
       continue;
     }
     const node = frame.container.nodes?.[frame.index];
+    const extra = inserted?.(frame.container, node);
+    if (extra) {
+      if (!skipped?.has(extra)) visit(extra, frame.index);
+      continue;
+    }
     if (!node) {
       pending.pop();
       continue;
@@ -333,13 +344,26 @@ function splitTopLevelSegments(
 
 class CompatibilitySource {
   private readonly lineStarts = [0];
-  private braceOffsets: number[] | undefined;
+  private readonly charOffsets = new Map<string, number[]>();
   private preludeStops:
     | { from: number; until: number; stops: Int32Array }
     | undefined;
   private selectorStops: Int32Array | undefined;
   private valueStops: Int32Array | undefined;
+  private commentValueStops: Int32Array | undefined;
   private ruleStops: Int32Array | undefined;
+  private statementEnds: Int32Array | undefined;
+  private readonly contentEnds = new Map<number, number>();
+  // `chainReader` results, with the header each was read from.
+  readonly chainReaders = new WeakMap<
+    postcss.AtRule,
+    {
+      start: number;
+      open: number;
+      name: string;
+      reader: ChainReader | undefined;
+    }
+  >();
   // Characters the whole-input searches may still scan directly before they
   // build their tables.
   private scanBudget: number;
@@ -398,6 +422,19 @@ class CompatibilitySource {
     return offset;
   }
 
+  // The offset after the last character before `end` that is not
+  // whitespace. Callers pass ends that are not whitespace themselves, so
+  // the cached runs are disjoint and the scans linear overall.
+  contentEnd(end: number): number {
+    let result = this.contentEnds.get(end);
+    if (result === undefined) {
+      result = end;
+      while (result > 0 && /\s/.test(this.css[result - 1])) result--;
+      this.contentEnds.set(end, result);
+    }
+    return result;
+  }
+
   pointAt(offset: number) {
     let low = 0;
     let high = this.lineStarts.length;
@@ -413,28 +450,36 @@ class CompatibilitySource {
     return this.lineStarts[line - 1] + column - 1;
   }
 
-  // Whether `other` breaks lines at the same offsets, so that a line and
-  // column in either is the same offset in both.
-  // Offset of the first `{` at or after `offset`, or the input length.
-  nextBrace(offset: number): number {
-    if (!this.braceOffsets) {
-      this.braceOffsets = [];
+  // Offset of the first `char` at or after `offset`, or -1. `char` is a
+  // character or `*/`, which cannot overlap itself. Each one's offsets are
+  // listed once, so searches from nested blocks stay linear.
+  nextIndex(char: string, offset: number): number {
+    let offsets = this.charOffsets.get(char);
+    if (!offsets) {
+      offsets = [];
       for (
-        let brace = this.css.indexOf('{');
-        brace !== -1;
-        brace = this.css.indexOf('{', brace + 1)
+        let index = this.css.indexOf(char);
+        index !== -1;
+        index = this.css.indexOf(char, index + 1)
       ) {
-        this.braceOffsets.push(brace);
+        offsets.push(index);
       }
+      this.charOffsets.set(char, offsets);
     }
     let low = 0;
-    let high = this.braceOffsets.length;
+    let high = offsets.length;
     while (low < high) {
       const middle = (low + high) >>> 1;
-      if (this.braceOffsets[middle] < offset) low = middle + 1;
+      if (offsets[middle] < offset) low = middle + 1;
       else high = middle;
     }
-    return this.braceOffsets[low] ?? this.css.length;
+    return offsets[low] ?? -1;
+  }
+
+  // Offset of the first `{` at or after `offset`, or the input length.
+  nextBrace(offset: number): number {
+    const brace = this.nextIndex('{', offset);
+    return brace === -1 ? this.css.length : brace;
   }
 
   // Whether V4 skipped the `{` at `offset` as a root rule without a selector.
@@ -507,6 +552,35 @@ class CompatibilitySource {
     return this.valueStops[offset];
   }
 
+  // The end of `declarationValueEnd(css.slice(offset, until), ...)` in the
+  // input, or -1: a direct scan while the scan budget lasts, then a table of
+  // whole-input scans, as a scan that reaches `until` finds no end before it.
+  valueEnd(offset: number, until: number, preserveComments: boolean): number {
+    if (offset >= until) return -1;
+    const stops = preserveComments ? this.commentValueStops : this.valueStops;
+    if (!stops && this.scanBudget > 0) {
+      const end = Math.min(until, offset + this.scanBudget);
+      const stop = declarationValueEnd(
+        this.css.slice(offset, end),
+        preserveComments,
+      );
+      this.scanBudget -= stop === -1 ? end - offset : stop + 1;
+      if (stop !== -1) return offset + stop;
+      if (end === until) return -1;
+    }
+    const { css } = this;
+    let table: Int32Array;
+    if (preserveComments) {
+      this.commentValueStops ??= preludeStops(css, 0, css.length, ';}', true);
+      table = this.commentValueStops;
+    } else {
+      this.valueStops ??= preludeStops(css, 0, css.length, ';}');
+      table = this.valueStops;
+    }
+    const stop = table[offset];
+    return stop < until ? stop : -1;
+  }
+
   // V4's check for a nested rule from `offset`: the first `{`, `;` or `}`
   // outside quotes and parentheses, or -1.
   ruleStop(offset: number): number {
@@ -515,6 +589,20 @@ class CompatibilitySource {
     if (stop !== undefined) return stop;
     this.ruleStops ??= preludeStops(this.css, 0, this.css.length, '{;}');
     return this.ruleStops[offset];
+  }
+
+  // `statementEnd(this.css, offset)` by a direct scan while the scan budget
+  // lasts, then from a table, so many searches stay linear.
+  statementEnd(offset: number): number {
+    if (!this.statementEnds && this.scanBudget > 0) {
+      const until = Math.min(this.css.length, offset + this.scanBudget);
+      const end = statementEnd(this.css, offset, until);
+      this.scanBudget -=
+        (end === undefined || end === -1 ? until : end) - offset;
+      if (end !== undefined) return end;
+    }
+    this.statementEnds ??= statementEnds(this.css);
+    return this.statementEnds[offset];
   }
 
   // Whether V4 reads `offset` as block at-rule prelude text. Prelude ends
@@ -603,6 +691,36 @@ function endsAtBrace(
   return css[offset] === '}';
 }
 
+// Where PostCSS ends `node`. It sets no end on an unclosed block, which runs
+// to the input end, nor on an at-rule without params or block, which ends at
+// its name.
+function parsedNodeEnd(node: postcss.ChildNode, css: string): number {
+  const end = node.source?.end?.offset;
+  if (end !== undefined) return end;
+  const start = node.source?.start?.offset;
+  return node.type === 'atrule' && !node.nodes && start !== undefined
+    ? start + 1 + node.name.length
+    : css.length;
+}
+
+// End of the names V4 reads for a `@layer` statement from `from`: the first
+// `{`, `;` or `@` before `until`, or `until`. Undefined where V4 reads none.
+function layerNamesEnd(
+  css: string,
+  from: number,
+  until: number,
+): number | undefined {
+  let end = from;
+  while (
+    end < until &&
+    css[end] !== '{' &&
+    css[end] !== ';' &&
+    css[end] !== '@'
+  )
+    end++;
+  return end > from ? end : undefined;
+}
+
 // V4's `@page` reads its selector up to the next `{` outside quotes and
 // parentheses, across `;` and `}`. Returns that `{` when it ends a selector.
 function pageSelectorEnd(
@@ -619,10 +737,14 @@ function pageSelectorEnd(
 
 // End of V4's `@import`, `@charset` or `@namespace` statement: past the first
 // `;` outside quotes, the input end, or -1 when a quote is left open, as V4's
-// regex then fails.
-function statementEnd(css: string, start: number): number {
+// regex then fails. Undefined when the scan reaches `until` first.
+function statementEnd(
+  css: string,
+  start: number,
+  until = css.length,
+): number | undefined {
   let quote = '';
-  for (let offset = start; offset < css.length; offset++) {
+  for (let offset = start; offset < until; offset++) {
     const char = css[offset];
     if (quote) {
       if (char === '\\') offset++;
@@ -630,7 +752,36 @@ function statementEnd(css: string, start: number): number {
     } else if (char === ';') return offset + 1;
     else if (char === '"' || char === "'") quote = char;
   }
+  if (until < css.length) return undefined;
   return quote ? -1 : css.length;
+}
+
+// `statementEnd(css, offset)` for every offset up to the input length, right
+// to left: a scan that skips a quoted string goes on as a fresh scan after it.
+function statementEnds(css: string): Int32Array {
+  const ends = new Int32Array(css.length + 1);
+  ends[css.length] = css.length;
+  // Closing quote of each kind for a string read from offset + 1 and
+  // offset + 2, or -1.
+  let double1 = -1;
+  let double2 = -1;
+  let single1 = -1;
+  let single2 = -1;
+  for (let offset = css.length - 1; offset >= 0; offset--) {
+    const char = css[offset];
+    const close = char === '"' ? double1 : char === "'" ? single1 : offset;
+    ends[offset] =
+      char === ';' ? offset + 1 : close === -1 ? -1 : ends[close + 1];
+    [double1, double2] = [
+      char === '\\' ? double2 : char === '"' ? offset : double1,
+      double1,
+    ];
+    [single1, single2] = [
+      char === '\\' ? single2 : char === "'" ? offset : single1,
+      single1,
+    ];
+  }
+  return ends;
 }
 
 // The characters that end V4's selector, value and statement scans.
@@ -669,12 +820,15 @@ function bracketedIndex(
 
 // `bracketedIndex(css, offset, until, stopChars)` for every offset in
 // [from, until), right to left: a search that skips an escape, a quoted
-// string or a parenthesized group goes on as a fresh search after it.
+// string or a parenthesized group goes on as a fresh search after it. With
+// `comments`, a search also skips comments and fails at an unclosed one, as
+// `declarationValueEnd` does when it preserves comments.
 function preludeStops(
   css: string,
   from: number,
   until: number,
   stopChars: StopChars = '{;',
+  comments = false,
 ): Int32Array {
   const stops = new Int32Array(until - from);
   // First `)` that closes a group opened just before each offset.
@@ -686,8 +840,12 @@ function preludeStops(
   let double2 = -1;
   let single1 = -1;
   let single2 = -1;
+  // Next `*/` from offset + 1 and offset + 2.
+  let comment1 = -1;
+  let comment2 = -1;
   for (let offset = until - 1; offset >= from; offset--) {
     const char = css[offset];
+    const pair = offset + 1 < until ? css[offset + 1] : '';
     const end =
       char === '\\'
         ? offset + 1
@@ -695,9 +853,13 @@ function preludeStops(
           ? double1
           : char === "'"
             ? single1
-            : char === '('
-              ? after(closes, offset)
-              : offset;
+            : comments && char === '/' && pair === '*'
+              ? comment2 === -1
+                ? -1
+                : comment2 + 1
+              : char === '('
+                ? after(closes, offset)
+                : offset;
     closes[offset - from] = char === ')' ? offset : after(closes, end);
     stops[offset - from] = stopChars.includes(char)
       ? offset
@@ -709,6 +871,10 @@ function preludeStops(
     [single1, single2] = [
       char === '\\' ? single2 : char === "'" ? offset : single1,
       single1,
+    ];
+    [comment1, comment2] = [
+      char === '*' && pair === '/' ? offset : comment1,
+      comment1,
     ];
   }
   return stops;
@@ -940,6 +1106,9 @@ function readInvalidAtRules(
     );
   };
   const dropped = new Set<postcss.ChildNode>();
+  // Whether V4 reads the block at-rules in each parent as at-rules. Every
+  // child asks, and the answer reads the parent's whole name and header.
+  const kept = new Map<postcss.Container, boolean>();
   walkNodes(root, (node, index) => {
     const parent = node.parent as postcss.Container | undefined;
     if (!invalid(node) || !node.source || !parent?.nodes) return;
@@ -947,15 +1116,18 @@ function readInvalidAtRules(
       if (parent.type !== 'root') dropped.add(node);
       return;
     }
-    const parentName =
-      parent.type === 'atrule' ? (parent as postcss.AtRule).name : '';
-    if (
-      (DECLARATION_ONLY_AT_RULES.has(parentName) &&
-        !headerFails(parentName, css, parent.source?.start?.offset ?? 0)) ||
-      keyframesRegex.test(parentName) ||
-      PAGE_MARGIN_BOX_NAMES.has(parentName)
-    )
-      return;
+    let keeps = kept.get(parent);
+    if (keeps === undefined) {
+      const parentName =
+        parent.type === 'atrule' ? (parent as postcss.AtRule).name : '';
+      keeps =
+        (DECLARATION_ONLY_AT_RULES.has(parentName) &&
+          !headerFails(parentName, css, parent.source?.start?.offset ?? 0)) ||
+        keyframesRegex.test(parentName) ||
+        PAGE_MARGIN_BOX_NAMES.has(parentName);
+      kept.set(parent, keeps);
+    }
+    if (keeps) return;
     const start = node.source.start?.offset ?? 0;
     const open = blockOpeningOffset(node);
     if (open === undefined || css[open] !== '{') return;
@@ -982,12 +1154,19 @@ function readInvalidAtRules(
     parent.removeAll();
     parent.append(retained);
   }
+  // Where the root node after the one read below starts.
+  let next = css.length;
   for (let index = root.nodes.length - 1; index >= 0; index--) {
     const node = root.nodes[index];
     if ((node.type === 'rule' || node.type === 'atrule') && node.nodes) return;
+    const limit = next;
+    next = node.source?.start?.offset ?? next;
     if (!invalid(node) || !node.source) continue;
     const start = node.source.start?.offset ?? 0;
-    const end = node.source.end?.offset ?? css.length;
+    // V4 reads each at-rule once, in order: one from the next root node on is
+    // read from that node or from the root text between nodes. This also
+    // keeps the scans disjoint.
+    const end = Math.min(node.source.end?.offset ?? css.length, limit);
     let at = start + 1;
     for (let comment = false; at < end; at++) {
       if (comment) {
@@ -1045,12 +1224,9 @@ function restoreCompatibilitySpans(
       const limit = hasSemicolon
         ? parsedEnd
         : (container.source?.end?.offset ?? parsedEnd ?? source.css.length);
-      const relativeEnd = declarationValueEnd(
-        source.css.slice(valueStart, limit),
-        preserveComments,
-      );
-      if (relativeEnd === -1) continue;
-      consumedEnd = valueStart + relativeEnd;
+      const valueEnd = source.valueEnd(valueStart, limit, preserveComments);
+      if (valueEnd === -1) continue;
+      consumedEnd = valueEnd;
       if (node.prop !== property[1]) {
         node.prop = property[1];
         node.raws.before = node.raws.before?.replace(/[*_]$/, '');
@@ -1131,15 +1307,31 @@ function restoreCompatibilitySpans(
   let unwrapBudget = source.css.length;
   // End of the last visited child of each container.
   const lastEnds = new Map<postcss.Container, number>();
+  // The last scan of each container's siblings from `from` for the block
+  // that a bodiless at-rule's prelude up to `cursor` reaches, which ended at
+  // `stop`. At-rules in a run share their prelude end, so each reuses it.
+  const preludeScans = new Map<
+    postcss.Container,
+    {
+      siblings: postcss.ChildNode[];
+      cursor: number;
+      from: number;
+      stop: number;
+      bodyIndex: number;
+      consumed: number;
+    }
+  >();
   // Where V4 reads on after `node`, which ends at `end`.
   const readOnFrom = (node: postcss.ChildNode, end: number): number =>
     node.parent &&
     skipsSemicolons(node, source.css) &&
-    (node.parent.type === 'root' || readsAtRules(node.parent, source.css))
+    (node.parent.type === 'root' || readsAtRules(node.parent, source))
       ? source.semicolonsEnd(end, source.css.length)
       : end;
   // V4 reads text before this offset as `@import`-like statement params.
   let statementsEnd = 0;
+  // Whether V4 reads the statement that set `statementsEnd` as selector text.
+  let statementsJunk = false;
   // A root at-rule failed: V4 then reads a rule up to the next `{`.
   let pendingMiss = false;
   // Root text that is not a statement: V4 reads a rule up to the next `{`.
@@ -1150,6 +1342,24 @@ function restoreCompatibilitySpans(
   let desync = false;
   const reached = (parent: postcss.Container, start: number): boolean =>
     !desync && start >= statementsEnd && !(parent.type === 'root' && runOn);
+  // The last root node with a block, per root node list.
+  let lastRootBlock: { nodes: postcss.ChildNode[]; index: number } | undefined;
+  const rootBlockFollows = (index: number): boolean => {
+    if (lastRootBlock?.nodes !== root.nodes) {
+      let at = root.nodes.length - 1;
+      while (
+        at >= 0 &&
+        !(
+          root.nodes[at].type === 'rule' ||
+          (root.nodes[at].type === 'atrule' &&
+            (root.nodes[at] as postcss.AtRule).nodes)
+        )
+      )
+        at--;
+      lastRootBlock = { nodes: root.nodes, index: at };
+    }
+    return lastRootBlock.index > index;
+  };
   const formed = new Map<postcss.Container, boolean>();
   // Whether V4 opens this block at the same `{` and parses at-rules in it.
   // Every V4 block at-rule reads its body as rules, generic ones included.
@@ -1173,7 +1383,7 @@ function restoreCompatibilitySpans(
               container.parent?.type === 'root' ? '{' : '{;}',
             ) === open
           : blockPreludeEnd(source, start) === open ||
-            chainReader(container as postcss.AtRule, source.css) === 'rules');
+            chainReader(container as postcss.AtRule, source) === 'rules');
       formed.set(container, result);
     }
     return result;
@@ -1205,7 +1415,7 @@ function restoreCompatibilitySpans(
     if (cursor !== css.length) return false;
     // Silent V4 skips a `;` after a nested block, except in a `@page` body.
     const skipsSemicolon =
-      readsAtRules(parent, css) &&
+      readsAtRules(parent, source) &&
       !(parent.type === 'atrule' && (parent as postcss.AtRule).name === 'page');
     for (let offset = gap; offset < start; offset++) {
       if (!/\s/.test(css[offset]) && !(skipsSemicolon && css[offset] === ';'))
@@ -1224,13 +1434,15 @@ function restoreCompatibilitySpans(
   // to the next `;` or the input end, so its params also take what PostCSS
   // parsed as its block or as following siblings. A node cut after its last
   // `;` leaves V4 only `}` to read: each is a stray. Returns false for other
-  // cuts.
+  // cuts, unless `lenient`: the node is then cut at `end` all the same, and
+  // keeps the CSS PostCSS parsed past `end` and a sibling that runs past it.
   const consumeStatement = (
     node: postcss.AtRule,
     index: number,
     start: number,
     parsedEnd: number,
     end: number,
+    lenient = false,
   ): boolean => {
     const { css } = source;
     const keywordEnd = start + 1 + node.name.length;
@@ -1269,23 +1481,29 @@ function restoreCompatibilitySpans(
     const siblings = root.nodes;
     let consumed = index + 1;
     if (parsedEnd > end) {
-      if (!closesAt(parsedEnd)) return false;
+      if (!closesAt(parsedEnd)) {
+        if (!lenient) return false;
+        strays.length = 0;
+      }
     } else {
       let cursor = parsedEnd;
       for (; consumed < siblings.length; consumed++) {
         const siblingStart = siblings[consumed].source?.start?.offset;
-        // Unclosed blocks have no end; they run to the input end.
-        const siblingEnd = siblings[consumed].source?.end?.offset ?? css.length;
-        if (siblingStart === undefined) return false;
+        const siblingEnd = parsedNodeEnd(siblings[consumed], css);
+        if (siblingStart === undefined) {
+          if (!lenient) return false;
+          break;
+        }
         if (siblingStart >= end) break;
         cursor = siblingEnd;
         if (siblingEnd > end) {
-          if (!closesAt(siblingEnd)) return false;
-          consumed++;
+          if (closesAt(siblingEnd)) consumed++;
+          else if (!lenient) return false;
+          else strays.length = 0;
           break;
         }
       }
-      if (commentStraddles(cursor)) return false;
+      if (!lenient && commentStraddles(cursor)) return false;
     }
     if (node.nodes) {
       node.removeAll();
@@ -1310,7 +1528,8 @@ function restoreCompatibilitySpans(
       merged.add(sibling);
     }
     if (consumed > index + 1) mergedParents.add(root);
-    source.strayBraces.push(...strays);
+    // Spread arguments overflow the stack for long brace runs.
+    for (const stray of strays) source.strayBraces.push(stray);
     return true;
   };
   // Moves the children of a root rule without a selector to the root, so
@@ -1437,7 +1656,7 @@ function restoreCompatibilitySpans(
       const page =
         node.name === 'page' &&
         parent !== undefined &&
-        (parent.type === 'root' || readsAtRules(parent, source.css));
+        (parent.type === 'root' || readsAtRules(parent, source));
       const cursor =
         !node.nodes && (semicolon || endsAtBrace(node, source.css, start))
           ? (blockPreludeEnd(source, start) ??
@@ -1449,19 +1668,39 @@ function restoreCompatibilitySpans(
         const siblings = parent.nodes;
         let bodyIndex = -1;
         let consumed = index + 1;
-        for (let next = index + 1; next < siblings.length; next++) {
-          const sibling = siblings[next];
-          const siblingStart = sibling.source?.start?.offset;
-          if (siblingStart === undefined) continue;
-          if (siblingStart > cursor) break;
-          if (
-            (sibling.type === 'rule' || sibling.type === 'atrule') &&
-            blockOpeningOffset(sibling) === cursor
-          ) {
-            bodyIndex = next;
-            break;
+        const scan = preludeScans.get(parent);
+        if (
+          scan?.siblings === siblings &&
+          scan.cursor === cursor &&
+          scan.from < index &&
+          index < scan.stop
+        ) {
+          bodyIndex = scan.bodyIndex;
+          consumed = Math.max(consumed, scan.consumed);
+        } else {
+          let next = index + 1;
+          for (; next < siblings.length; next++) {
+            const sibling = siblings[next];
+            const siblingStart = sibling.source?.start?.offset;
+            if (siblingStart === undefined) continue;
+            if (siblingStart > cursor) break;
+            if (
+              (sibling.type === 'rule' || sibling.type === 'atrule') &&
+              blockOpeningOffset(sibling) === cursor
+            ) {
+              bodyIndex = next;
+              break;
+            }
+            if (siblingStart < cursor) consumed = next + 1;
           }
-          if (siblingStart < cursor) consumed = next + 1;
+          preludeScans.set(parent, {
+            siblings,
+            cursor,
+            from: index,
+            stop: next,
+            bodyIndex,
+            consumed,
+          });
         }
         const body = siblings[bodyIndex];
         if (body?.type === 'rule' || body?.type === 'atrule') {
@@ -1525,15 +1764,38 @@ function restoreCompatibilitySpans(
         node.parent?.type === 'root' || parentClose === undefined
           ? source.css.length
           : parentClose - 1;
+      // V4 reads the names of a `@layer` statement on past a `}` that ends
+      // it here, up to a `{`, `;` or `@`.
+      const layerNames =
+        open === undefined && !semicolon && node.name === 'layer'
+          ? layerNamesEnd(source.css, start + 6, parentEnd)
+          : undefined;
+      // Bounded where they would run over the next root node: at their end,
+      // or at that node where text PostCSS read in this one follows them.
+      const nextStart =
+        layerNames !== undefined && parent === root
+          ? root.nodes[index + 1]?.source?.start?.offset
+          : undefined;
+      let layerEnd: number | undefined;
+      if (layerNames !== undefined && nextStart !== undefined) {
+        const after =
+          source.css[layerNames] === ';' ? layerNames + 1 : layerNames;
+        layerEnd =
+          after >= nextStart || source.contentEnd(nextStart) <= after
+            ? layerNames
+            : nextStart;
+      }
       const end =
         open ??
-        (semicolon && parsedEnd !== undefined ? parsedEnd - 1 : parentEnd);
+        (semicolon && parsedEnd !== undefined
+          ? parsedEnd - 1
+          : (layerEnd ?? parentEnd));
       let paramsStart = start + node.name.length + 1;
       while (paramsStart < end && /\s/.test(source.css[paramsStart]))
         paramsStart++;
-      let paramsEnd = end;
-      while (paramsEnd > paramsStart && /\s/.test(source.css[paramsEnd - 1]))
-        paramsEnd--;
+      // Siblings without a block can share `end`, so its trim is cached.
+      const paramsEnd =
+        paramsStart < end ? Math.max(paramsStart, source.contentEnd(end)) : end;
       node.raws.afterName = source.css.slice(
         start + node.name.length + 1,
         paramsStart,
@@ -1552,9 +1814,21 @@ function restoreCompatibilitySpans(
           keyframesRegex.test(node.name) ||
           /^([-\w]+)?document$/.test(node.name) ||
           PAGE_MARGIN_BOX_NAMES.has(node.name) ||
-          (node.name === 'layer' &&
-            /^@layer *([^{;@]+)/.test(source.css.slice(start, end)));
-        const cursor = known ? end : paramsStart;
+          layerNames !== undefined;
+        // V4 skips the `;` after the names of a `@layer` statement.
+        const cursor = !known
+          ? paramsStart
+          : end === layerEnd && end === layerNames && source.css[end] === ';'
+            ? end + 1
+            : end;
+        // Names that end at a `;` or `@` end the statement there, and V4
+        // reads the next root node as its own.
+        if (
+          end === layerEnd &&
+          end === layerNames &&
+          (source.css[end] === ';' || source.css[end] === '@')
+        )
+          terminated = true;
         if (!known) {
           node.params = '';
           node.raws.between = '';
@@ -1565,6 +1839,23 @@ function restoreCompatibilitySpans(
           column: point.column - 1,
           offset: cursor,
         };
+        // The root nodes PostCSS parsed inside the names are part of them.
+        for (
+          let next = index + 1;
+          layerEnd !== undefined && next < root.nodes.length;
+          next++
+        ) {
+          const sibling = root.nodes[next];
+          const siblingStart = sibling.source?.start?.offset;
+          if (
+            siblingStart === undefined ||
+            siblingStart >= cursor ||
+            parsedNodeEnd(sibling, source.css) > cursor
+          )
+            break;
+          merged.add(sibling);
+          mergedParents.add(root);
+        }
       }
       if (consumedEnd !== undefined && consumedEnd !== parsedEnd) {
         node.source.end = {
@@ -1572,20 +1863,23 @@ function restoreCompatibilitySpans(
           offset: consumedEnd,
         };
       }
+      // The end of the statement V4 reads from `start`, when computed.
+      let statement: number | undefined;
+      // Whether V4 reads a statement at `start`, rather than selector text.
+      const atStatement =
+        reached(root, start) && !pendingMiss && !rootJunk && !gapJunk;
       if (
         start >= statementsEnd &&
         /^(?:import|charset|namespace)/.test(node.name)
       ) {
-        const end = statementEnd(source.css, start);
+        const end = source.statementEnd(start);
+        if (end !== -1) statement = end;
         if (
           end !== -1 &&
           !terminated &&
           /^(?:import|charset|namespace):?$/.test(node.name) &&
           node.parent === root &&
-          reached(root, start) &&
-          !pendingMiss &&
-          !rootJunk &&
-          !gapJunk &&
+          atStatement &&
           consumeStatement(
             node,
             index,
@@ -1597,6 +1891,50 @@ function restoreCompatibilitySpans(
           terminated = true;
         }
         statementsEnd = end === -1 ? source.css.length : end;
+        statementsJunk = !atStatement || end === -1;
+      }
+      // Bounds a root statement V4 reads differently that runs over the next
+      // root node, so that each of a run does not take the rest of the
+      // input: up to its V4 end, else up to the next root node. After text
+      // that V4 reads as a selector, a later block takes that selector and
+      // the node is dropped, so the node must not take the block.
+      const next = root.nodes[index + 1]?.source?.start?.offset;
+      const nodeEnd = node.source.end?.offset ?? source.css.length;
+      if (
+        !terminated &&
+        !node.nodes &&
+        node.parent === root &&
+        next !== undefined &&
+        next < nodeEnd &&
+        /^(?:import|charset|namespace):?$/.test(node.name)
+      ) {
+        if (
+          statement !== undefined &&
+          (atStatement || !rootBlockFollows(index))
+        ) {
+          // PostCSS sets no end on an at-rule with only spaces and comments
+          // as params; the siblings up to the V4 end are then merged.
+          if (nodeEnd >= statement)
+            consumeStatement(
+              node,
+              index,
+              start,
+              parsedStatementEnd ?? start + 1 + node.name.length,
+              statement,
+              true,
+            );
+        } else {
+          let paramsEnd = Math.max(paramsStart, source.contentEnd(next));
+          if (paramsEnd > next) paramsEnd = next;
+          node.params = source.css.slice(paramsStart, paramsEnd);
+          node.raws.between = source.css.slice(paramsEnd, next);
+          const point = source.pointAt(next);
+          node.source.end = {
+            line: point.line,
+            column: point.column - 1,
+            offset: next,
+          };
+        }
       }
     }
     if (node.parent === root && start !== undefined) {
@@ -1620,6 +1958,15 @@ function restoreCompatibilitySpans(
         pendingMiss = false;
         rootJunk = false;
         runOn = false;
+        // V4 reads a statement it does not match as a selector up to this
+        // block, then reads the root nodes after the block.
+        const blockEnd = node.source?.end?.offset;
+        if (
+          statementsJunk &&
+          blockEnd !== undefined &&
+          blockEnd < statementsEnd
+        )
+          statementsEnd = blockEnd;
       } else if (node.type === 'atrule' || node.type === 'decl') {
         runOn = !terminated && (node.type === 'atrule' || runOn);
       }
@@ -1851,7 +2198,7 @@ function recoverRootText(
   for (let offset = from; offset < until; offset++) {
     if (/\s/.test(css[offset])) continue;
     if (css.startsWith('/*', offset)) {
-      const close = css.indexOf('*/', offset + 2);
+      const close = source.nextIndex('*/', offset + 2);
       if (close !== -1) {
         const comment = commentAt(root, source, offset, close + 2);
         recoveredRootComments.add(comment);
@@ -1872,12 +2219,12 @@ function recoverRootText(
 
 function recoverBodyText(
   root: postcss.Root,
-  parent: postcss.Container,
   source: CompatibilitySource,
   errors: CssParseError[],
   from: number,
   until: number,
   preserveComments: boolean,
+  insert: (declaration: postcss.Declaration) => void,
 ): void {
   const { css } = source;
   let cursor = from;
@@ -1893,11 +2240,12 @@ function recoverBodyText(
         cursor++;
         while (cursor < until && /\s/.test(css[cursor])) cursor++;
         const valueStart = cursor;
-        const relativeEnd = declarationValueEnd(
-          css.slice(valueStart, until + Number(css[until] === '}')),
+        const valueEnd = source.valueEnd(
+          valueStart,
+          until + Number(css[until] === '}'),
           preserveComments,
         );
-        if (relativeEnd !== -1) cursor += relativeEnd;
+        if (valueEnd !== -1) cursor = valueEnd;
         const declaration = postcss.decl({
           prop: property[1],
           value: trim(css.slice(valueStart, cursor)),
@@ -1913,13 +2261,13 @@ function recoverBodyText(
             end: { ...source.pointAt(cursor), offset: cursor + 1 },
           };
         }
-        insertInSourceOrder(parent, declaration);
+        insert(declaration);
         continue;
       }
       errors.push(source.error("property missing ':'", cursor));
     }
-    const semicolon = css.indexOf(';', cursor);
-    const close = css.indexOf('}', cursor);
+    const semicolon = source.nextIndex(';', cursor);
+    const close = source.nextIndex('}', cursor);
     if (
       semicolon === -1 ||
       semicolon >= until ||
@@ -1927,27 +2275,6 @@ function recoverBodyText(
     )
       break;
     cursor = semicolon + 1;
-  }
-}
-
-// Siblings are in source order, so this matches append + stable sort.
-function insertInSourceOrder(
-  parent: postcss.Container,
-  node: postcss.ChildNode,
-): void {
-  parent.append(node);
-  const nodes = parent.nodes ?? [];
-  const offset = node.source?.start?.offset ?? 0;
-  let low = 0;
-  let high = nodes.length - 1;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if ((nodes[middle].source?.start?.offset ?? 0) <= offset) low = middle + 1;
-    else high = middle;
-  }
-  if (low < nodes.length - 1) {
-    nodes.pop();
-    nodes.splice(low, 0, node);
   }
 }
 
@@ -2179,7 +2506,6 @@ function collectCompatibilityErrors(
     const limit = css[end - 1] === '}' ? end - 1 : end;
     const children = container.nodes;
     const retained: postcss.ChildNode[] = [];
-    let nextClose: number | undefined;
 
     function stopAt(offset: number): void {
       if (container.type === 'atrule') {
@@ -2332,7 +2658,7 @@ function collectCompatibilityErrors(
         while (cursor < until && /\s/.test(css[cursor])) cursor++;
         if (cursor >= until) break;
         if (css.startsWith('/*', cursor)) {
-          const close = css.indexOf('*/', cursor + 2);
+          const close = source.nextIndex('*/', cursor + 2);
           if (close !== -1 && close + 2 <= until) {
             retained.push(commentAt(root, source, cursor, close + 2));
             cursor = close + 2;
@@ -2357,17 +2683,11 @@ function collectCompatibilityErrors(
           stopAt(cursor);
           return limit;
         }
-        if (
-          nextClose === undefined ||
-          (nextClose !== -1 && nextClose < cursor)
-        ) {
-          nextClose = css.indexOf('}', cursor);
-        }
-        const recoveryEnd =
-          nextClose === -1 ? limit : Math.min(nextClose, limit);
-        const semicolon = css.slice(cursor, recoveryEnd).indexOf(';');
-        if (semicolon !== -1) {
-          cursor += semicolon + 1;
+        const close = source.nextIndex('}', cursor);
+        const recoveryEnd = close === -1 ? limit : Math.min(close, limit);
+        const semicolon = source.nextIndex(';', cursor);
+        if (semicolon !== -1 && semicolon < recoveryEnd) {
+          cursor = semicolon + 1;
         } else {
           stopAt(cursor);
           return limit;
@@ -2377,7 +2697,7 @@ function collectCompatibilityErrors(
     }
 
     let cursor = open + 1;
-    const atRules = readsAtRules(container, css);
+    const atRules = readsAtRules(container, source);
     for (const child of children) {
       const childStart = child.source?.start?.offset;
       if (childStart === undefined) {
@@ -2474,6 +2794,15 @@ interface ChainBreak {
   header?: { start: number; reason: string };
 }
 
+// `ChainBreak['levels']` from a block out, shared with the blocks inside it,
+// and whether the scan cannot follow one of its blocks.
+interface ChainLink {
+  node: postcss.Rule | postcss.AtRule;
+  reader: ChainReader;
+  outer: ChainLink | undefined;
+  unread: boolean;
+}
+
 const blockReaderNames =
   /^(?:media|supports|container|font-feature-values|scope|layer|host|starting-style)$/;
 const declarationReaderNames =
@@ -2483,17 +2812,34 @@ const prefixedAtRuleRegex =
   /^(?:media|supports|import|charset|namespace|page|host|font-face|container|starting-style|layer|scope|view-transition)|keyframes|document/;
 
 // V4's reader for the body of `node`, or undefined where V4 matches its
-// header otherwise.
+// header otherwise. Every node in a block asks for the block's reader, so it
+// is cached with the header it was read from.
 function chainReader(
   node: postcss.Rule | postcss.AtRule,
-  css: string,
+  source: CompatibilitySource,
 ): ChainReader | undefined {
   if (node.type === 'rule') return 'rules';
   const start = node.source?.start?.offset;
   const open = blockOpeningOffset(node);
-  if (start === undefined || open === undefined || css[open] !== '{')
-    return undefined;
+  if (start === undefined || open === undefined) return undefined;
   const { name } = node;
+  const cached = source.chainReaders.get(node);
+  if (cached?.start === start && cached.open === open && cached.name === name)
+    return cached.reader;
+  const reader = headerReader(name, source.css, start, open);
+  source.chainReaders.set(node, { start, open, name, reader });
+  return reader;
+}
+
+// V4's reader for the body of the at-rule named `name` at `start`, whose
+// block PostCSS opens at `open`.
+function headerReader(
+  name: string,
+  css: string,
+  start: number,
+  open: number,
+): ChainReader | undefined {
+  if (css[open] !== '{') return undefined;
   const preludeStart = start + 1 + name.length;
   if (preludeStart > open) return undefined;
   const prelude = css.slice(preludeStart, open);
@@ -2525,17 +2871,31 @@ function chainReader(
   return undefined;
 }
 
-// Whether V4 reads at-rules in the body of `container`.
-function readsAtRules(container: postcss.Container, css: string): boolean {
-  if (container.type === 'rule') {
-    const { parent } = container;
-    return !(
-      parent?.type === 'atrule' &&
-      keyframesRegex.test((parent as postcss.AtRule).name)
-    );
+// Whether `node` is a keyframes at-rule. Every node in a block asks this of
+// the block, so the answer is cached with the name it was read from.
+const keyframesAtRules = new WeakMap<
+  postcss.Node,
+  { name: string; keyframes: boolean }
+>();
+function keyframesAtRule(node: postcss.Node | undefined): boolean {
+  if (node?.type !== 'atrule') return false;
+  const { name } = node as postcss.AtRule;
+  let cached = keyframesAtRules.get(node);
+  if (cached?.name !== name) {
+    cached = { name, keyframes: keyframesRegex.test(name) };
+    keyframesAtRules.set(node, cached);
   }
+  return cached.keyframes;
+}
+
+// Whether V4 reads at-rules in the body of `container`.
+function readsAtRules(
+  container: postcss.Container,
+  source: CompatibilitySource,
+): boolean {
+  if (container.type === 'rule') return !keyframesAtRule(container.parent);
   if (container.type !== 'atrule') return false;
-  const reader = chainReader(container as postcss.AtRule, css);
+  const reader = chainReader(container as postcss.AtRule, source);
   return (
     reader === 'rules' ||
     (reader === 'declarations' && (container as postcss.AtRule).name === 'page')
@@ -2668,7 +3028,7 @@ function declarationBreak(
       )
         return null;
       if (child.nodes) {
-        if (chainReader(child, css) !== 'declarations') return null;
+        if (chainReader(child, source) !== 'declarations') return null;
         const inner = declarationBreak(child, source, read);
         if (inner !== undefined) return inner;
         cursor = childEnd;
@@ -2822,8 +3182,11 @@ function valueComment(
   const start = comment?.source?.start?.offset;
   if (!comment || start === undefined || comment.parent?.type === 'root')
     return;
-  let previous = comment.prev();
-  while (previous?.type === 'comment') previous = previous.prev();
+  // One backward walk: `prev()` searches the siblings at every step.
+  const siblings: postcss.ChildNode[] = comment.parent?.nodes ?? [];
+  let index = siblings.indexOf(comment) - 1;
+  while (siblings[index]?.type === 'comment') index--;
+  const previous = siblings[index] as postcss.ChildNode | undefined;
   const declaration = previous?.source?.start?.offset;
   const parsedEnd = previous?.source?.end?.offset;
   if (
@@ -2862,6 +3225,10 @@ function recoverCompatibility(
 ): ChainBreak | undefined {
   const { css } = source;
   const recoveryEnds = new Map<postcss.Container, number>();
+  // Error positions, indexed on first use so that each lookup is O(1).
+  // Closing errors are all collected before, and until the walk ends errors
+  // are only appended or replaced in place.
+  let errorIndexes: Map<CssParseError, number> | undefined;
   // V4 reads the block from `start` as a rule, so the `}` it misses there
   // is a rule's.
   const readAsRule = (
@@ -2871,7 +3238,17 @@ function recoverCompatibility(
   ): postcss.Rule => {
     const closing =
       node.type === 'atrule' ? source.closingErrors.get(node) : undefined;
-    const index = closing ? errors.indexOf(closing) : -1;
+    let index = -1;
+    if (closing) {
+      if (!errorIndexes) {
+        errorIndexes = new Map();
+        for (let at = errors.length - 1; at >= 0; at--)
+          errorIndexes.set(errors[at], at);
+      }
+      index = errorIndexes.get(closing) ?? -1;
+      if (index !== -1 && errors[index] !== closing)
+        index = errors.indexOf(closing);
+    }
     if (closing && index !== -1) {
       errors[index] = source.error(
         "missing '}'",
@@ -2907,9 +3284,71 @@ function recoverCompatibility(
   // index (the walk skips them) and are dropped once the walk completes.
   const detached = new Set<postcss.ChildNode>();
   const dirty = new Set<postcss.Container>();
+  // Blocks whose visit is done, and their `chainFrom` results. Every node in
+  // a block asks for the block's, and after its visit only `detach` changes
+  // a block, so it is kept until then.
+  const settled = new Set<postcss.Node>();
+  const chains = new Map<postcss.Container, ChainLink | null>();
   const detach = (node: postcss.ChildNode): void => {
     detached.add(node);
     if (node.parent) dirty.add(node.parent);
+    chains.delete(node as postcss.Container);
+  };
+  // Declarations recovered in each block, in source order, and how many
+  // the walk has visited. Inserting each one in the block would shift the
+  // nodes after it, so the walk visits it where it goes, after the nodes
+  // starting at or before it, and it is merged in once the walk is done.
+  const recovered = new Map<
+    postcss.Container,
+    { nodes: postcss.ChildNode[]; visited: number }
+  >();
+  const recover = (
+    parent: postcss.Container,
+    declaration: postcss.Declaration,
+  ): void => {
+    let block = recovered.get(parent);
+    if (!block) {
+      block = { nodes: [], visited: 0 };
+      recovered.set(parent, block);
+    }
+    declaration.parent = parent as postcss.Declaration['parent'];
+    const offset = declaration.source?.start?.offset ?? 0;
+    let at = block.nodes.length;
+    while (
+      at > block.visited &&
+      (block.nodes[at - 1].source?.start?.offset ?? 0) > offset
+    )
+      at--;
+    block.nodes.splice(at, 0, declaration);
+  };
+  const recoveredBefore = (
+    container: postcss.Container,
+    next: postcss.ChildNode | undefined,
+  ): postcss.ChildNode | undefined => {
+    const block = recovered.get(container);
+    const node = block?.nodes[block.visited];
+    if (
+      !block ||
+      !node ||
+      (next &&
+        (next.source?.start?.offset ?? 0) <= (node.source?.start?.offset ?? 0))
+    )
+      return;
+    block.visited++;
+    return node;
+  };
+  // A block's last node, which may be a declaration recovered in it.
+  const lastNode = (
+    container: postcss.Container,
+  ): postcss.ChildNode | undefined => {
+    const last = container.last;
+    const nodes = recovered.get(container)?.nodes;
+    const declaration = nodes?.[nodes.length - 1];
+    return declaration &&
+      (declaration.source?.start?.offset ?? 0) >=
+        (last?.source?.start?.offset ?? 0)
+      ? declaration
+      : last;
   };
   // Root nodes before `tail` are in source order; recovered comments follow.
   let tail = root.nodes.length;
@@ -2917,6 +3356,114 @@ function recoverCompatibility(
   let rootIndex = 0;
   // No live block remains at or after this root index.
   let blocklessFrom = Number.POSITIVE_INFINITY;
+  // For each cursor, the last search for the first live root node from
+  // `from` that starts at or after it, which ended at `index`. Root
+  // at-rules in a run fail at the same cursor, so each search goes on from
+  // the previous one, also when at-rules failing elsewhere come between.
+  const nextSearches = new Map<
+    number,
+    { nodes: postcss.ChildNode[]; from: number; index: number }
+  >();
+  // A root `@page` that V4 fails to read moves its nodes after the failed
+  // at-rule to the root, visited right after it. Inserting them there would
+  // shift every later root node, so the first move rebuilds the root with
+  // free slots after each page for what it can move, and later moves fill
+  // them. A slot is detached, so it is passed over as a removed node.
+  const pageSlot = postcss.comment({ text: '' });
+  detached.add(pageSlot);
+  // The end of each run of free slots, by its start, which follows a node.
+  // Searches of the root skip a run at once.
+  const slotRuns = new Map<number, number>();
+  const slotsEnd = (index: number): number => slotRuns.get(index) ?? index + 1;
+  const isPage = (node: postcss.ChildNode): node is postcss.AtRule =>
+    node.type === 'atrule' &&
+    node.name === 'page' &&
+    !!node.nodes &&
+    !detached.has(node);
+  // How many nodes a page can move to the root, with those that the pages
+  // among them can move in turn: at most its nodes after its first at-rule.
+  // Nodes are only detached or removed meanwhile, so a count stays enough.
+  const pageMoves = new Map<postcss.ChildNode, number>();
+  const countMoves = (page: postcss.AtRule): number => {
+    const pending = [page];
+    while (pending.length) {
+      const current = pending[pending.length - 1];
+      if (pageMoves.has(current)) {
+        pending.pop();
+        continue;
+      }
+      let count = 0;
+      let waiting = false;
+      let moving = false;
+      for (const child of current.nodes ?? []) {
+        if (!moving) {
+          moving = child.type === 'atrule';
+          continue;
+        }
+        if (child.type === 'decl' || detached.has(child)) continue;
+        count++;
+        if (!isPage(child)) continue;
+        const moves = pageMoves.get(child);
+        if (moves === undefined) {
+          pending.push(child);
+          waiting = true;
+        } else count += moves;
+      }
+      if (!waiting) {
+        pageMoves.set(current, count);
+        pending.pop();
+      }
+    }
+    return pageMoves.get(page) ?? 0;
+  };
+  // Moves `moved`, the nodes of the failed root page `page`, right after it.
+  const movePage = (page: postcss.AtRule, moved: postcss.ChildNode[]): void => {
+    const nodes = root.nodes;
+    const at = nodes[rootIndex] === page ? rootIndex : nodes.indexOf(page);
+    let needed = 0;
+    for (const child of moved)
+      needed += 1 + (isPage(child) ? countMoves(child) : 0);
+    const end = nodes[at + 1] === pageSlot ? slotRuns.get(at + 1) : undefined;
+    if (end !== undefined && end - (at + 1) >= needed) {
+      slotRuns.delete(at + 1);
+      let slot = at + 1;
+      let run = -1;
+      for (const child of moved) {
+        child.parent = root;
+        nodes[slot++] = child;
+        const count = isPage(child) ? countMoves(child) : 0;
+        run = count ? slot : -1;
+        if (count) slotRuns.set(slot, slot + count);
+        slot += count;
+      }
+      // The slots left join the run before them.
+      if (slot < end) slotRuns.set(run === -1 ? slot : run, end);
+    } else {
+      slotRuns.clear();
+      const rebuilt = nodes.slice(0, at + 1);
+      const place = (child: postcss.ChildNode): void => {
+        rebuilt.push(child);
+        const count = isPage(child) ? countMoves(child) : 0;
+        if (!count) return;
+        slotRuns.set(rebuilt.length, rebuilt.length + count);
+        for (let i = 0; i < count; i++) rebuilt.push(pageSlot);
+      };
+      for (const child of moved) {
+        child.parent = root;
+        place(child);
+      }
+      let rebuiltTail = tail > at ? -1 : tail;
+      for (let i = at + 1; i < nodes.length; i++) {
+        if (i === tail) rebuiltTail = rebuilt.length;
+        if (nodes[i] !== pageSlot) place(nodes[i]);
+      }
+      tail = rebuiltTail === -1 ? rebuilt.length : rebuiltTail;
+      root.nodes = rebuilt;
+      dirty.add(root);
+    }
+    nextSearches.clear();
+    blocklessFrom = Number.POSITIVE_INFINITY;
+  };
   // Rules that run to the end of the input; V4 keeps them without content.
   const unclosed = new Set<postcss.Rule>();
   // Errors closing the blocks that run to the end of the input, outermost
@@ -2929,45 +3476,69 @@ function recoverCompatibility(
   // and those it reads in a way the scan cannot follow.
   const read = new Set<postcss.AtRule>();
   const unread = new Set<postcss.Rule | postcss.AtRule>();
-  // The enclosing blocks of `node`, from `from` out, while V4 reads them as
-  // PostCSS did.
-  const chainLevels = (
-    node: postcss.ChildNode,
-    from = node.parent as postcss.Container | undefined,
-  ): ChainBreak['levels'] | undefined => {
+  // The blocks from `container` out while V4 reads them as PostCSS did:
+  // undefined at the root, and null where V4 reads one otherwise.
+  const chainFrom = (
+    container: postcss.Container | undefined,
+  ): ChainLink | null | undefined => {
     const levels: ChainBreak['levels'] = [];
+    let chain: ChainLink | null | undefined;
     for (
-      let parent = from;
+      let parent = container;
       parent && parent !== root;
       parent = parent.parent as postcss.Container | undefined
     ) {
-      if (parent.type !== 'rule' && parent.type !== 'atrule') return;
+      const kept = chains.get(parent);
+      if (kept !== undefined) {
+        chain = kept;
+        break;
+      }
+      if (parent.type !== 'rule' && parent.type !== 'atrule') {
+        chain = null;
+        break;
+      }
       const block = parent as postcss.Rule | postcss.AtRule;
-      const reader = chainReader(block, css);
+      const reader = chainReader(block, source);
       if (
         !reader ||
         source.abandoned.has(block) ||
         source.hoisted.has(block) ||
         (detached.has(block) && !unclosedAtRules.has(block))
-      )
-        return;
+      ) {
+        chain = null;
+        break;
+      }
       levels.push({ node: block, reader });
     }
+    for (let index = levels.length - 1; index >= 0; index--) {
+      const { node, reader } = levels[index];
+      if (chain !== null) {
+        chain = {
+          node,
+          reader,
+          outer: chain,
+          unread: unread.has(node) || chain?.unread === true,
+        };
+      }
+      if (settled.has(node)) chains.set(node, chain);
+    }
+    return chain;
+  };
+  // The blocks of `chain`, innermost first.
+  const chainLevels = (chain: ChainLink | undefined): ChainBreak['levels'] => {
+    const levels: ChainBreak['levels'] = [];
+    for (let link = chain; link; link = link.outer)
+      levels.push({ node: link.node, reader: link.reader });
     return levels;
   };
   // A `miss` break at `node`, an at-rule without a block that ends a body
   // read as rules. A rule V4 keeps is only moved back at the root.
   const missChainBreak = (node: postcss.AtRule): ChainBreak | undefined => {
     const parent = node.parent;
-    if (!parent || parent.type === 'root' || parent.last !== node) return;
-    const levels = chainLevels(node);
-    if (
-      !levels?.length ||
-      levels[0].reader !== 'rules' ||
-      levels.some((level) => unread.has(level.node))
-    )
-      return;
-    const block = levels[0].node;
+    if (!parent || parent.type === 'root' || lastNode(parent) !== node) return;
+    const chain = chainFrom(parent);
+    if (chain?.reader !== 'rules' || chain.unread) return;
+    const block = chain.node;
     if (
       (block.type === 'rule' && block.parent !== root) ||
       recoveryEnds.has(block)
@@ -2986,7 +3557,7 @@ function recoverCompatibility(
       offset: found.offset,
       quote: -1,
       colon: false,
-      levels,
+      levels: chainLevels(chain),
       miss: { start: node.source?.start?.offset ?? 0, errors: found.errors },
     };
   };
@@ -3032,17 +3603,16 @@ function recoverCompatibility(
       return;
     let levels: ChainBreak['levels'] = [];
     if (node.parent !== root) {
-      const found = chainLevels(node);
+      const chain = chainFrom(node.parent);
       // A body read as rules reads a rule where a `{` comes before any `;`
       // or `}`.
       if (
-        !found?.length ||
-        found[0].reader !== 'rules' ||
-        found.some((level) => unread.has(level.node)) ||
+        chain?.reader !== 'rules' ||
+        chain.unread ||
         bracketedIndex(css, cursor, open + 1, '{;}') !== open
       )
         return;
-      levels = found;
+      levels = chainLevels(chain);
     }
     return {
       kind: 'header',
@@ -3097,12 +3667,11 @@ function recoverCompatibility(
       if (at < stop) swallowed = stop;
       return;
     }
-    const levels = chainLevels(decl, parent);
+    const chain = chainFrom(parent);
     if (
-      !levels?.length ||
-      levels[0].reader !== 'rules' ||
-      levels.some((level) => unread.has(level.node)) ||
-      recoveryEnds.has(levels[0].node) ||
+      chain?.reader !== 'rules' ||
+      chain.unread ||
+      recoveryEnds.has(chain.node) ||
       source.inPrelude(start)
     )
       return;
@@ -3120,6 +3689,7 @@ function recoverCompatibility(
     if (cursor >= css.length) return;
     // V4 reads another declaration there.
     if (css[cursor] === ':') return null;
+    const levels = chainLevels(chain);
     let skipped = -1;
     if (silent) {
       const semicolon = css.indexOf(';', cursor);
@@ -3164,22 +3734,25 @@ function recoverCompatibility(
       // V4 may read on past a block at-rule it fails to read.
       if (headerMiss(node, css) || keyframesMiss(node, css))
         runOnFrom = Math.min(runOnFrom, node.source?.start?.offset ?? 0);
-      if (chainReader(node, css) !== 'declarations') return;
+      if (chainReader(node, source) !== 'declarations') return;
       // Where the scan cannot follow a block, it leaves the blocks inside
       // to recovery as before.
-      const enclosing = chainLevels(node);
-      if (!enclosing || enclosing.some((level) => unread.has(level.node)))
-        return;
+      const enclosing = chainFrom(node.parent);
+      if (enclosing === null || enclosing?.unread) return;
       const found = declarationBreak(node, source, read);
       if (found === null) unread.add(node);
-      const levels = found && chainLevels(found.node);
-      if (!found || !levels) return;
+      if (!found) return;
+      const chain = chainFrom(found.node.parent);
+      if (chain === null) return;
       return {
         kind: 'declarations',
         offset: found.offset,
         quote: -1,
         colon: found.colon,
-        levels: [{ node: found.node, reader: 'declarations' }, ...levels],
+        levels: [
+          { node: found.node, reader: 'declarations' },
+          ...chainLevels(chain),
+        ],
       };
     }
     if (node.type !== 'rule' || node.source?.start?.offset === undefined)
@@ -3217,8 +3790,9 @@ function recoverCompatibility(
       if (css[stop] === '{' || propertyRegex.test(css)) return null;
       kind = 'text';
     }
-    const levels = chainLevels(node);
-    if (!levels) return null;
+    const chain = chainFrom(node.parent);
+    if (chain === null) return null;
+    const levels = chainLevels(chain);
     if (silent) {
       const semicolon = css.indexOf(';', start);
       const brace = css.indexOf('}', start);
@@ -3239,6 +3813,9 @@ function recoverCompatibility(
   let valueCandidate:
     | { decl: postcss.Declaration; parent: postcss.Container }
     | undefined;
+  // Where the text already reported by the rules without a selector around
+  // a block ends. V4 reports each character once, however deep they nest.
+  const reportedEnds = new Map<postcss.Node, number>();
   const recoverNode = (node: postcss.ChildNode, index: number): void => {
     if (chainBreak) return;
     if (detecting) {
@@ -3251,11 +3828,18 @@ function recoverCompatibility(
     }
     if (node.parent === root) rootIndex = index;
     const start = node.source?.start?.offset ?? 0;
+    const reportedEnd = node.parent && reportedEnds.get(node.parent);
+    if (
+      reportedEnd !== undefined &&
+      (node.type === 'rule' || node.type === 'atrule')
+    )
+      reportedEnds.set(node, reportedEnd);
     if (node.type === 'rule' && !node.selector.trim()) {
       detach(node);
+      const end = node.source?.end?.offset ?? css.length;
       for (
-        let offset = start;
-        offset < (node.source?.end?.offset ?? css.length);
+        let offset = Math.max(start, reportedEnd ?? 0);
+        offset < end;
         offset++
       ) {
         if (!/\s/.test(css[offset])) {
@@ -3267,6 +3851,7 @@ function recoverCompatibility(
           );
         }
       }
+      reportedEnds.set(node, Math.max(end, reportedEnd ?? 0));
     } else if (node.type === 'decl') {
       const value = node.raws.value?.raw ?? node.value;
       if (
@@ -3296,8 +3881,8 @@ function recoverCompatibility(
         node.parent !== root &&
         /^(?:import|charset|namespace)/.test(node.name) &&
         !/^[-\w]*keyframes/.test(node.name) &&
-        readsAtRules(node.parent, css) &&
-        statementEnd(css, start) === css.length
+        readsAtRules(node.parent, source) &&
+        source.statementEnd(start) === css.length
       ) {
         detach(node);
         for (const child of node.nodes) detach(child);
@@ -3397,28 +3982,22 @@ function recoverCompatibility(
         errors.push(source.error("@page missing '}'", cursor));
         if (page && remaining) {
           page.removeAll();
-          if (remaining.length) {
-            // `insertBefore` moves nodes one at a time; the root is rebuilt.
-            const at = root.nodes.indexOf(page);
-            root.nodes = root.nodes
-              .slice(0, at)
-              .concat(remaining, root.nodes.slice(at));
-            for (const child of remaining) child.parent = root;
-            tail += remaining.length;
-            blocklessFrom = Number.POSITIVE_INFINITY;
-          }
+          if (remaining.length) movePage(page, remaining);
         }
         detach(parent);
       }
       if (silent) {
         if (parent?.type === 'root' || page) {
-          // In the page case, `remaining` now starts at the page's index.
-          const from = page ? rootIndex : rootIndex + 1;
+          const from = rootIndex + 1;
           let nextIndex = -1;
           let lastBlock = -1;
           const scanEnd = Math.min(blocklessFrom, root.nodes.length);
           for (let i = from; i < scanEnd; i++) {
             const child = root.nodes[i];
+            if (child === pageSlot) {
+              i = slotsEnd(i) - 1;
+              continue;
+            }
             if (
               detached.has(child) ||
               (child.type !== 'rule' && child.type !== 'atrule') ||
@@ -3456,6 +4035,10 @@ function recoverCompatibility(
             // recovered comments can be anywhere in the tail.
             for (let i = from; i < nextIndex; i++) {
               const child = root.nodes[i];
+              if (child === pageSlot) {
+                i = slotsEnd(i) - 1;
+                continue;
+              }
               if (!detached.has(child) && skipped(child)) detach(child);
             }
             for (
@@ -3483,8 +4066,16 @@ function recoverCompatibility(
             return;
           }
           let next: postcss.ChildNode | undefined;
-          for (let i = from; i < root.nodes.length; i++) {
-            const child = root.nodes[i];
+          let nextAt = from;
+          const search = nextSearches.get(cursor);
+          if (search?.nodes === root.nodes && search.from <= from)
+            nextAt = Math.max(from, search.index);
+          for (; nextAt < root.nodes.length; nextAt++) {
+            const child = root.nodes[nextAt];
+            if (child === pageSlot) {
+              nextAt = slotsEnd(nextAt) - 1;
+              continue;
+            }
             if (
               !detached.has(child) &&
               (child.source?.start?.offset ?? -1) >= cursor
@@ -3493,6 +4084,7 @@ function recoverCompatibility(
               break;
             }
           }
+          nextSearches.set(cursor, { nodes: root.nodes, from, index: nextAt });
           // Collect reported the root text after the at-rule's own span.
           const until = Math.min(
             next?.source?.start?.offset ?? css.length,
@@ -3521,18 +4113,42 @@ function recoverCompatibility(
         if (parent) {
           recoverBodyText(
             root,
-            parent,
             source,
             errors,
             cursor,
             recoveryEnd,
             preserveComments,
+            (declaration) => recover(parent, declaration),
           );
         }
       }
     }
   };
-  walkNodes(root, recoverNode, detached);
+  walkNodes(
+    root,
+    (node, index) => {
+      recoverNode(node, index);
+      if (node.type === 'rule' || node.type === 'atrule') settled.add(node);
+    },
+    detached,
+    recoveredBefore,
+  );
+  for (const [parent, block] of recovered) {
+    const nodes = parent.nodes ?? [];
+    const merged: postcss.ChildNode[] = [];
+    let index = 0;
+    for (const node of block.nodes) {
+      const offset = node.source?.start?.offset ?? 0;
+      while (
+        index < nodes.length &&
+        (nodes[index].source?.start?.offset ?? 0) <= offset
+      )
+        merged.push(nodes[index++]);
+      merged.push(node);
+    }
+    while (index < nodes.length) merged.push(nodes[index++]);
+    parent.nodes = merged;
+  }
   if (detecting && !chainBreak && valueCandidate) {
     const found = valueBreak(valueCandidate.decl, valueCandidate.parent);
     if (found) chainBreak = found;
@@ -4197,12 +4813,7 @@ function buildStylesheet(
   const convertedNodes: ConvertedNodes = new WeakMap();
   for (let index = nodes.length - 1; index >= 0; index--) {
     const node = nodes[index];
-    if (
-      node.type === 'rule' &&
-      node.parent?.type === 'atrule' &&
-      keyframesRegex.test(node.parent.name)
-    )
-      continue;
+    if (node.type === 'rule' && keyframesAtRule(node.parent)) continue;
     const converted = convertChildNode(node, sourceName, convertedNodes);
     if (converted) convertedNodes.set(node, converted);
   }
@@ -4516,7 +5127,9 @@ function parseCompatibility(
       const at = source.offsetAt(error.line, error.column);
       return at >= start && at < miss.start;
     });
-    dropped.push(...miss.errors, closing(block));
+    // Spread arguments overflow the stack for many errors.
+    for (const error of miss.errors) dropped.push(error);
+    dropped.push(closing(block));
     const parsed = parseAgain(blankRange(css, start, offset));
     parsed.errors = insertErrors(parsed.errors, dropped, source, start);
     if (block.type === 'rule' && block.source) {
