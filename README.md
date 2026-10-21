@@ -152,31 +152,32 @@ For more examples, see the [Examples documentation](docs/EXAMPLES.md).
 
 V5's PostCSS-based parser was faster than the published V4.5.0 parser on these
 samples. Measurements used Benchmark.js with repeated warm, steady-state samples
-on Node.js 24.18.0 and an Apple M3 Max (macOS/arm64). ASTs and stringified outputs
-were checked for equality before timing. These measurements use PostCSS 8.5.30
-and include the final compatibility repairs.
+on Node.js 24.18.0 and an Apple M3 Max (macOS/arm64); each figure is the median
+of three runs. ASTs and stringified outputs were checked for equality before
+timing. These measurements use PostCSS 8.5.30 and include the final
+compatibility repairs.
 
 | CSS input | Size | V4.5.0 parse (ms) | V5 parse (ms) | V5 speedup |
 |---|---:|---:|---:|---:|
-| One rule | 20 bytes | 0.0057 | 0.0047 | 1.2x |
-| `benchmark/small.css` | 7.8 KB | 0.464 | 0.310 | 1.5x |
-| Pure.css 3.0.0 | 26.2 KB | 3.890 | 1.589 | 2.4x |
-| Bootstrap 5.3.3 | 281 KB | 603.5 | 21.9 | 27.5x |
+| One rule | 20 bytes | 0.0057 | 0.0051 | 1.1x |
+| `benchmark/small.css` | 7.8 KB | 0.477 | 0.336 | 1.4x |
+| Pure.css 3.0.0 | 26.2 KB | 4.140 | 1.662 | 2.5x |
+| Bootstrap 5.3.3 | 281 KB | 621.3 | 24.8 | 25.1x |
 
-For Bootstrap, parsing plus default stringification improved from **604.4 ms to
-22.7 ms**, about **27x faster**. Stringification alone was broadly unchanged:
-Bootstrap took about 0.70 ms in both V4 and V5.
+For Bootstrap, parsing plus default stringification improved from **633.4 ms to
+27.7 ms**, about **23x faster**. Stringification alone was broadly unchanged:
+Bootstrap took about 0.76 ms in both V4 and V5.
 
 Warm throughput is not cold-start latency, and small inputs do not always favor
-V5. A separate alternating-order, forced-GC batch run measured a 17-byte rule at
-0.0056 ms in V4 and 0.0112 ms in V5, and `benchmark/small.css` at 0.496 ms in V4
-and 0.546 ms in V5. Median module loading, excluding process startup, was
-0.59 ms for V4's CJS entry and 8.13 ms for V5's ESM entry across eleven fresh
-processes each; the first parse after loading took 0.58 ms and 2.68 ms.
-Fresh-process Bootstrap peak RSS was about 71.4 MiB in V4 and 96.3 MiB in V5,
+V5. Separate alternating-order, forced-GC batch runs measured a 17-byte rule at
+0.0061 ms in V4 and 0.0127 ms in V5, and `benchmark/small.css` at 0.521 ms in V4
+and 0.591 ms in V5. Median module loading, excluding process startup, was
+0.65 ms for V4's CJS entry and 8.87 ms for V5's ESM entry across eleven fresh
+processes each; the first parse after loading took 0.60 ms and 3.05 ms.
+Fresh-process Bootstrap peak RSS was about 72.1 MiB in V4 and 97.9 MiB in V5,
 including module initialization, a live AST, and compressed stringification.
-The standalone UMD bundle grew from 20,942 to 126,102 bytes, or from 4,701 to
-37,231 bytes gzipped.
+The standalone UMD bundle grew from 20,942 to 131,834 bytes, or from 4,701 to
+39,296 bytes gzipped.
 
 These are sample measurements, not guaranteed speedups. Results depend on the
 CSS, warm-up, garbage collection, runtime, and hardware. See the `benchmark/`
@@ -240,7 +241,7 @@ parse such input up to eight more times, which multiplies this cost:
   or three times, and V5 reported about 320,000 errors, V4's error for each
   character V4 skips. Parsing took 1.2–2.5 s.
 - On 688 KB of `'a{b:url(x;}'.repeat(n)`, PostCSS ran nine times, and parsing
-  took 4.7 s.
+  took about 5 s.
 
 `postcss-safe-parser` alone took about 0.23 s and 0.44 s on those inputs. V4's
 silent mode took over 4 s on 12 KB of the first shape and 28 s on 43 KB of the
