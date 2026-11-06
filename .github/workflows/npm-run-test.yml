@@ -5,9 +5,9 @@ name: "CI/CD: build & test & lint"
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "v5" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "v5" ]
 
 jobs:
   build:
@@ -27,6 +27,8 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
-    - run: npm install
+    - run: npm ci
+    - run: npm audit --omit=dev
     - run: npm run build
+    - run: npm run test:bundles
     - run: npm run test

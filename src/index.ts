@@ -4,5 +4,6 @@ export const parse = parseFn;
 export const stringify = stringifyFn;
 export * from './CssParseError';
 export * from './CssPosition';
+export type { ParseOptions } from './parse';
 export * from './type';
 export default { parse, stringify };

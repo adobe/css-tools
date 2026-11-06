@@ -1,5 +1,27 @@
 export const MAX_LOOP = 10000;
 
+const BACKSLASH = 92;
+const DOUBLE_QUOTE = 34;
+const SINGLE_QUOTE = 39;
+const OPEN_PARENTHESIS = 40;
+const CLOSE_PARENTHESIS = 41;
+
+// The searches below read the string only up to their result, unlike one
+// `indexOf` per token, so splitting a string with repeated searches is linear.
+const startsWithAny = (
+  string: string,
+  search: Array<string>,
+  position: number,
+): boolean => {
+  const char = string.charCodeAt(position);
+  for (let index = 0; index < search.length; index++) {
+    const value = search[index];
+    if (value.charCodeAt(0) === char && string.startsWith(value, position))
+      return true;
+  }
+  return false;
+};
+
 /**
  * Find the first occurrence of any search string in the input string, ignoring escaped characters
  * @param string - The input string to search in
@@ -21,26 +43,18 @@ export const indexOfArrayNonEscaped = (
   search: Array<string>,
   position?: number,
 ): number => {
-  let currentPosition = position;
   let maxLoop = MAX_LOOP;
-  do {
-    const all = search.map((v) => string.indexOf(v, currentPosition));
-    all.push(string.indexOf('\\', currentPosition));
-    const foundAll = all.filter((v) => v !== -1);
-    if (foundAll.length === 0) {
-      return -1;
-    }
-
-    const found = Math.min(...foundAll);
-    if (string[found] === '\\') {
-      currentPosition = found + 2;
-      maxLoop--;
+  for (let offset = Math.max(0, position ?? 0); offset < string.length; ) {
+    if (string.charCodeAt(offset) === BACKSLASH) {
+      if (--maxLoop === 0) throw new Error('Too many escaping');
+      offset += 2;
+    } else if (startsWithAny(string, search, offset)) {
+      return offset;
     } else {
-      return found;
+      offset++;
     }
-  } while (maxLoop > 0);
-
-  throw new Error('Too many escaping');
+  }
+  return -1;
 };
 
 /**
@@ -71,74 +85,44 @@ export const indexOfArrayWithBracketAndQuoteSupport = (
   search: Array<string>,
   position?: number,
 ): number => {
-  let currentSearchPosition = position;
-  let maxLoop = MAX_LOOP;
-
-  do {
-    const all = search.map((v) => string.indexOf(v, currentSearchPosition));
-
-    all.push(string.indexOf('(', currentSearchPosition));
-    all.push(string.indexOf('"', currentSearchPosition));
-    all.push(string.indexOf("'", currentSearchPosition));
-    all.push(string.indexOf('\\', currentSearchPosition));
-
-    const foundAll = all.filter((v) => v !== -1);
-    if (foundAll.length === 0) {
-      return -1;
+  // Each `(` starts a nested search for its `)` with its own loop budget. The
+  // enclosing budgets are kept on a stack instead of recursing, so deep
+  // nesting cannot overflow the call stack.
+  const enclosing: Array<number> = [];
+  let budget = MAX_LOOP;
+  for (let offset = Math.max(0, position ?? 0); offset < string.length; ) {
+    const char = string.charCodeAt(offset);
+    let end: number;
+    if (char === BACKSLASH) {
+      end = offset + 1;
+    } else if (char === OPEN_PARENTHESIS) {
+      enclosing.push(budget);
+      budget = MAX_LOOP;
+      offset++;
+      continue;
+    } else if (char === DOUBLE_QUOTE || char === SINGLE_QUOTE) {
+      end = indexOfArrayNonEscaped(string, [string[offset]], offset + 1);
+      if (end === -1) {
+        return -1;
+      }
+    } else if (char === CLOSE_PARENTHESIS && enclosing.length > 0) {
+      budget = enclosing.pop() as number;
+      end = offset;
+    } else if (
+      enclosing.length === 0 &&
+      startsWithAny(string, search, offset)
+    ) {
+      return offset;
+    } else {
+      offset++;
+      continue;
     }
-
-    const firstMatchPos = Math.min(...foundAll);
-    const char = string[firstMatchPos];
-    switch (char) {
-      case '\\':
-        currentSearchPosition = firstMatchPos + 2;
-        break;
-      case '(':
-        {
-          const endPosition = indexOfArrayWithBracketAndQuoteSupport(
-            string,
-            [')'],
-            firstMatchPos + 1,
-          );
-          if (endPosition === -1) {
-            return -1;
-          }
-          currentSearchPosition = endPosition + 1;
-        }
-        break;
-      case '"':
-        {
-          const endQuotePosition = indexOfArrayNonEscaped(
-            string,
-            ['"'],
-            firstMatchPos + 1,
-          );
-          if (endQuotePosition === -1) {
-            return -1;
-          }
-          currentSearchPosition = endQuotePosition + 1;
-        }
-        break;
-      case "'":
-        {
-          const endQuotePosition = indexOfArrayNonEscaped(
-            string,
-            ["'"],
-            firstMatchPos + 1,
-          );
-          if (endQuotePosition === -1) {
-            return -1;
-          }
-          currentSearchPosition = endQuotePosition + 1;
-        }
-        break;
-      default:
-        return firstMatchPos;
+    if (--budget === 0) {
+      throw new Error('Too many escaping');
     }
-    maxLoop--;
-  } while (maxLoop > 0);
-
-  throw new Error('Too many escaping');
+    offset = end + 1;
+  }
+  return -1;
 };
 
 /**
